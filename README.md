@@ -44,13 +44,19 @@ No login. No account. No network access. Just the `.dsr` file and the customer's
 
 ## Install
 
-**macOS:**
-```
+**macOS (Homebrew — recommended):**
+
+```bash
 brew install BeWallow/tap/dsr-verifier-cli
 ```
 
-**Linux / Windows:** download the binary from https://verify.deja.dev/download and verify the
-SHA-256 checksum listed on that page before running.
+**macOS, Linux, and Windows (direct download):**
+
+Download the binary for your platform from
+[GitHub Releases](https://github.com/BeWallow/dsr-verifier-cli/releases). Each release includes
+binaries for macOS (Apple Silicon and Intel), Linux (amd64 and arm64), and Windows (amd64), plus
+a GPG-signed `SHA256SUMS` file. Verify the checksum before running — see
+[docs/RELEASE.md](docs/RELEASE.md) for the full procedure.
 
 ## Usage
 
