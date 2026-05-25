@@ -25,7 +25,7 @@ issuing organization for their public key file.
 
 **macOS (recommended):**
 ```
-brew install deja-dev/tap/dsr-verifier-cli
+brew install BeWallow/tap/dsr-verifier-cli
 ```
 
 **Linux / Windows — direct download:**

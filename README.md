@@ -13,7 +13,7 @@ An auditor's job is to verify evidence, not to trust tools on faith. This CLI is
 auditable end-to-end:
 
 - **Audit the source.** Every line of verification logic is published at
-  `github.com/deja-dev/dsr-verifier-cli`. There is nothing to hide.
+  `github.com/BeWallow/dsr-verifier-cli`. There is nothing to hide.
 - **Rebuild from source.** The build is reproducible: same source + same Go 1.22.3 toolchain =
   byte-for-byte identical binary. See `BUILD.md`.
 - **Verify our binaries with your own builds.** Every release ships a GPG-signed `SHA256SUMS`
@@ -46,7 +46,7 @@ No login. No account. No network access. Just the `.dsr` file and the customer's
 
 **macOS:**
 ```
-brew install deja-dev/tap/dsr-verifier-cli
+brew install BeWallow/tap/dsr-verifier-cli
 ```
 
 **Linux / Windows:** download the binary from https://verify.deja.dev/download and verify the
@@ -101,6 +101,7 @@ for the exact construction).
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Any user — 15 most common verification failures |
 | [docs/SECURITY.md](docs/SECURITY.md) | Security reviewer — cryptographic design and import graph audit |
 | [docs/VERSIONING.md](docs/VERSIONING.md) | Any user — compatibility commitments and support window |
+| [docs/HOMEBREW_SETUP.md](docs/HOMEBREW_SETUP.md) | Engineers — Homebrew tap + `HOMEBREW_TAP_TOKEN` |
 | [BUILD.md](BUILD.md) | Anyone building from source — reproducible build instructions |
 
 ## License

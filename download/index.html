@@ -64,51 +64,51 @@
     <tr>
       <td>macOS</td>
       <td>Apple Silicon (M1/M2/M3)</td>
-      <td><a href="https://github.com/deja-dev/dsr-verifier-cli/releases/download/v1.0.0/dsr-verifier-cli-v1.0.0-darwin-arm64.tar.gz">dsr-verifier-cli-v1.0.0-darwin-arm64.tar.gz</a></td>
+      <td><a href="https://github.com/BeWallow/dsr-verifier-cli/releases/download/v1.0.0/dsr-verifier-cli-v1.0.0-darwin-arm64.tar.gz">dsr-verifier-cli-v1.0.0-darwin-arm64.tar.gz</a></td>
       <td class="hash">REPLACE_SHA256_DARWIN_ARM64</td>
     </tr>
     <tr>
       <td>macOS</td>
       <td>Intel (x86-64)</td>
-      <td><a href="https://github.com/deja-dev/dsr-verifier-cli/releases/download/v1.0.0/dsr-verifier-cli-v1.0.0-darwin-amd64.tar.gz">dsr-verifier-cli-v1.0.0-darwin-amd64.tar.gz</a></td>
+      <td><a href="https://github.com/BeWallow/dsr-verifier-cli/releases/download/v1.0.0/dsr-verifier-cli-v1.0.0-darwin-amd64.tar.gz">dsr-verifier-cli-v1.0.0-darwin-amd64.tar.gz</a></td>
       <td class="hash">REPLACE_SHA256_DARWIN_AMD64</td>
     </tr>
     <tr>
       <td>Linux</td>
       <td>x86-64</td>
-      <td><a href="https://github.com/deja-dev/dsr-verifier-cli/releases/download/v1.0.0/dsr-verifier-cli-v1.0.0-linux-amd64.tar.gz">dsr-verifier-cli-v1.0.0-linux-amd64.tar.gz</a></td>
+      <td><a href="https://github.com/BeWallow/dsr-verifier-cli/releases/download/v1.0.0/dsr-verifier-cli-v1.0.0-linux-amd64.tar.gz">dsr-verifier-cli-v1.0.0-linux-amd64.tar.gz</a></td>
       <td class="hash">REPLACE_SHA256_LINUX_AMD64</td>
     </tr>
     <tr>
       <td>Linux</td>
       <td>ARM64</td>
-      <td><a href="https://github.com/deja-dev/dsr-verifier-cli/releases/download/v1.0.0/dsr-verifier-cli-v1.0.0-linux-arm64.tar.gz">dsr-verifier-cli-v1.0.0-linux-arm64.tar.gz</a></td>
+      <td><a href="https://github.com/BeWallow/dsr-verifier-cli/releases/download/v1.0.0/dsr-verifier-cli-v1.0.0-linux-arm64.tar.gz">dsr-verifier-cli-v1.0.0-linux-arm64.tar.gz</a></td>
       <td class="hash">REPLACE_SHA256_LINUX_ARM64</td>
     </tr>
     <tr>
       <td>Windows</td>
       <td>x86-64</td>
-      <td><a href="https://github.com/deja-dev/dsr-verifier-cli/releases/download/v1.0.0/dsr-verifier-cli-v1.0.0-windows-amd64.zip">dsr-verifier-cli-v1.0.0-windows-amd64.zip</a></td>
+      <td><a href="https://github.com/BeWallow/dsr-verifier-cli/releases/download/v1.0.0/dsr-verifier-cli-v1.0.0-windows-amd64.zip">dsr-verifier-cli-v1.0.0-windows-amd64.zip</a></td>
       <td class="hash">REPLACE_SHA256_WINDOWS_AMD64</td>
     </tr>
   </tbody>
 </table>
 
 <p>
-  <a href="https://github.com/deja-dev/dsr-verifier-cli/releases/download/v1.0.0/SHA256SUMS">SHA256SUMS</a>
+  <a href="https://github.com/BeWallow/dsr-verifier-cli/releases/download/v1.0.0/SHA256SUMS">SHA256SUMS</a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/deja-dev/dsr-verifier-cli/releases/download/v1.0.0/SHA256SUMS.asc">SHA256SUMS.asc (GPG signature)</a>
+  <a href="https://github.com/BeWallow/dsr-verifier-cli/releases/download/v1.0.0/SHA256SUMS.asc">SHA256SUMS.asc (GPG signature)</a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/deja-dev/dsr-verifier-cli/releases">All releases</a>
+  <a href="https://github.com/BeWallow/dsr-verifier-cli/releases">All releases</a>
 </p>
 
 <!-- ──────────────────────────────────────────── Install via Homebrew ── -->
 <h2>Install via Homebrew (macOS / Linux)</h2>
 
-<pre>brew install deja-dev/tap/dsr-verifier-cli</pre>
+<pre>brew install BeWallow/tap/dsr-verifier-cli</pre>
 
 <p>To add the tap manually first:</p>
-<pre>brew tap deja-dev/tap
+<pre>brew tap BeWallow/tap
 brew install dsr-verifier-cli</pre>
 
 <!-- ──────────────────────────────────────────────── Verify section ── -->
@@ -118,8 +118,8 @@ brew install dsr-verifier-cli</pre>
 
 <h3>Step 1 — Download the checksum file and its GPG signature</h3>
 
-<pre>curl -LO https://github.com/deja-dev/dsr-verifier-cli/releases/download/v1.0.0/SHA256SUMS
-curl -LO https://github.com/deja-dev/dsr-verifier-cli/releases/download/v1.0.0/SHA256SUMS.asc</pre>
+<pre>curl -LO https://github.com/BeWallow/dsr-verifier-cli/releases/download/v1.0.0/SHA256SUMS
+curl -LO https://github.com/BeWallow/dsr-verifier-cli/releases/download/v1.0.0/SHA256SUMS.asc</pre>
 
 <h3>Step 2 — Import the Déjà release public key (one-time setup)</h3>
 
@@ -157,12 +157,12 @@ Expand-Archive dsr-verifier-cli-v1.0.0-windows-amd64.zip .
 <h2>Reproducible builds</h2>
 
 <p>
-  The source code is open (<a href="https://github.com/deja-dev/dsr-verifier-cli">github.com/deja-dev/dsr-verifier-cli</a>).
+  The source code is open (<a href="https://github.com/BeWallow/dsr-verifier-cli">github.com/BeWallow/dsr-verifier-cli</a>).
   Any auditor can rebuild the binary from source and verify it matches
   the SHA-256 above:
 </p>
 
-<pre>git clone https://github.com/deja-dev/dsr-verifier-cli.git
+<pre>git clone https://github.com/BeWallow/dsr-verifier-cli.git
 cd dsr-verifier-cli
 git checkout v1.0.0
 
@@ -171,7 +171,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 go build \
   -trimpath \
   -buildvcs=false \
-  -ldflags="-s -w -X github.com/deja-dev/dsr-verifier-cli/internal/cli.BuildCommit=${COMMIT}" \
+  -ldflags="-s -w -X github.com/BeWallow/dsr-verifier-cli/internal/cli.BuildCommit=${COMMIT}" \
   -o dsr-verifier-cli \
   ./cmd/dsr-verifier-cli
 
@@ -179,7 +179,7 @@ sha256sum dsr-verifier-cli
 # Compare to the linux-amd64 line in SHA256SUMS above</pre>
 
 <p>
-  Full instructions and Docker-based build: <a href="https://github.com/deja-dev/dsr-verifier-cli/blob/main/BUILD.md">BUILD.md</a>
+  Full instructions and Docker-based build: <a href="https://github.com/BeWallow/dsr-verifier-cli/blob/main/BUILD.md">BUILD.md</a>
 </p>
 
 <!-- ──────────────────────────────────────────────── System requirements ── -->
@@ -199,8 +199,8 @@ sha256sum dsr-verifier-cli
 <hr>
 <p style="font-size:0.85em; color:#666;">
   dsr-verifier-cli is open-source (MIT License) ·
-  <a href="https://github.com/deja-dev/dsr-verifier-cli">Source code</a> ·
-  <a href="https://github.com/deja-dev/dsr-verifier-cli/issues">Report a bug</a> ·
+  <a href="https://github.com/BeWallow/dsr-verifier-cli">Source code</a> ·
+  <a href="https://github.com/BeWallow/dsr-verifier-cli/issues">Report a bug</a> ·
   <a href="https://deja.dev">deja.dev</a>
 </p>
 

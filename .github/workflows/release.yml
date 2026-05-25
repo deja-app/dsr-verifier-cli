@@ -169,15 +169,15 @@ jobs:
 
           **macOS (Homebrew):**
           \`\`\`
-          brew install deja-dev/tap/dsr-verifier-cli
+          brew install BeWallow/tap/dsr-verifier-cli
           \`\`\`
 
           **Direct download:** grab the binary for your platform below, then verify the checksum:
           \`\`\`
           # Download the binary and the checksum file
-          curl -LO https://github.com/deja-dev/dsr-verifier-cli/releases/download/${VERSION}/dsr-verifier-cli-${VERSION}-linux-amd64.tar.gz
-          curl -LO https://github.com/deja-dev/dsr-verifier-cli/releases/download/${VERSION}/SHA256SUMS
-          curl -LO https://github.com/deja-dev/dsr-verifier-cli/releases/download/${VERSION}/SHA256SUMS.asc
+          curl -LO https://github.com/BeWallow/dsr-verifier-cli/releases/download/${VERSION}/dsr-verifier-cli-${VERSION}-linux-amd64.tar.gz
+          curl -LO https://github.com/BeWallow/dsr-verifier-cli/releases/download/${VERSION}/SHA256SUMS
+          curl -LO https://github.com/BeWallow/dsr-verifier-cli/releases/download/${VERSION}/SHA256SUMS.asc
 
           # Verify the GPG signature on the checksum file
           gpg --keyserver keys.openpgp.org --recv-keys <RELEASE_KEY_FINGERPRINT>
@@ -189,7 +189,7 @@ jobs:
 
           ### Reproducible builds
 
-          Any auditor can rebuild from source and confirm their binary matches the published SHA-256. See [BUILD.md](https://github.com/deja-dev/dsr-verifier-cli/blob/main/BUILD.md) for the full procedure.
+          Any auditor can rebuild from source and confirm their binary matches the published SHA-256. See [BUILD.md](https://github.com/BeWallow/dsr-verifier-cli/blob/main/BUILD.md) for the full procedure.
           EOF
 
       - name: Create GitHub Release
@@ -202,6 +202,7 @@ jobs:
             dist/*
 
       - name: Dispatch Homebrew tap update
+        if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
@@ -214,7 +215,7 @@ jobs:
           curl -sf -X POST \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: token ${HOMEBREW_TAP_TOKEN}" \
-            "https://api.github.com/repos/deja-dev/homebrew-tap/dispatches" \
+            "https://api.github.com/repos/BeWallow/homebrew-tap/dispatches" \
             -d "{
               \"event_type\": \"new-release\",
               \"client_payload\": {
