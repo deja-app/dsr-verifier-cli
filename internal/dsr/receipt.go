@@ -45,13 +45,18 @@ const (
 	SigningAlgorithmECDSA      = "ecdsa-sha256"
 )
 
-// Receipt is the parsed, validated representation of a DSR/1.0.1 receipt.
+// Receipt is the parsed, validated representation of a DSR/1.0.1 (or DSR/1.0
+// for RV types) receipt.
 //
 // The Signature field holds the raw signature bytes decoded from the hex
 // string stored in the JSON. For ed25519 this is 64 bytes; for RSA-PSS it
 // is the RSA key size in bytes; for ECDSA it is an ASN.1/DER-encoded value.
 // The Content field is the raw JSON bytes of the receipt body, preserved
 // verbatim for canonical hash computation.
+//
+// RV-specific fields (RV, RV-i, RV-f receipts) are populated when the type
+// is TypeRV, TypeRVi, or TypeRVf. These are the fields signed by
+// CanonicalRvSignedPayload, which must match rv-receipt-canonical.ts.
 type Receipt struct {
 	ID               string          `json:"id"`
 	Version          string          `json:"version"`
@@ -63,6 +68,23 @@ type Receipt struct {
 	SigningKeyID     string          `json:"signing_key_id"`
 	SigningAlgorithm  string          `json:"signing_algorithm"`
 	Signature        HexBytes        `json:"signature"`
+
+	// RV-specific signing fields — populated for TypeRV, TypeRVi, TypeRVf.
+	// These fields correspond to the 10-field payload in rv-receipt-canonical.ts.
+	// They are omitted (zero-value) for standard receipt types.
+	//
+	// IssuedAtRaw captures the verbatim issued_at string from the receipt JSON
+	// for use in the RV canonical form. This preserves millisecond precision
+	// (e.g. "2026-01-01T00:00:00.000Z") which would be lost if the time.Time
+	// field were reformatted. It is populated by the custom UnmarshalJSON.
+	IssuedAtRaw             string   `json:"-"` // not a JSON field; set by custom unmarshal
+	ChecksPassed             []string `json:"checks_passed,omitempty"`
+	ReceiptsAttestedCount    int      `json:"receipts_attested_count,omitempty"`
+	RvType                   string   `json:"rv_type,omitempty"`
+	VerificationRunID        string   `json:"verification_run_id,omitempty"`
+	VerificationMode         string   `json:"verification_mode,omitempty"`
+	VerificationStartedAt    string   `json:"verification_started_at,omitempty"`
+	VerificationCompletedAt  string   `json:"verification_completed_at,omitempty"`
 }
 
 // HexBytes is a []byte that marshals to/from a lowercase hex string in JSON.

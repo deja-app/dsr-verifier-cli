@@ -184,14 +184,28 @@ func TestParseAcceptedAlgorithms(t *testing.T) {
 }
 
 func TestParseAllValidTypes(t *testing.T) {
-	types := []string{"R1", "R1-L", "R1-N", "R2", "RV", "RV-i", "RV-f"}
-	for _, typ := range types {
-		t.Run(typ, func(t *testing.T) {
+	tests := []struct {
+		typ     string
+		version string
+	}{
+		{"R1", dsr.Version},
+		{"R1-L", dsr.Version},
+		{"R1-N", dsr.Version},
+		{"R2", dsr.Version},
+		// RV types use DSR/1.0 — issued with that version and must verify forever.
+		{"RV", dsr.VersionRV},
+		{"RV-i", dsr.VersionRV},
+		{"RV-f", dsr.VersionRV},
+	}
+	for _, tc := range tests {
+		t.Run(tc.typ, func(t *testing.T) {
 			input := strings.Replace(validReceiptJSON, `"type": "R1"`,
-				`"type": "`+typ+`"`, 1)
+				`"type": "`+tc.typ+`"`, 1)
+			input = strings.Replace(input, `"version": "DSR/1.0.1"`,
+				`"version": "`+tc.version+`"`, 1)
 			_, err := dsr.Parse([]byte(input))
 			if err != nil {
-				t.Errorf("Parse %s: %v", typ, err)
+				t.Errorf("Parse %s (version %s): %v", tc.typ, tc.version, err)
 			}
 		})
 	}

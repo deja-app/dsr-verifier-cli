@@ -136,14 +136,25 @@ func Signature(r *dsr.Receipt, provided *PublicKeyWithID) *SignatureResult {
 		SignatureHex:    sigDisplay,
 	}
 
-	payload, err := dsr.CanonicalSignedPayload(r)
-	if err != nil {
+	// Canonical-form dispatch: RV receipt types use the 10-field RV payload
+	// (matching rv-receipt-canonical.ts); all other types use the 8-field
+	// standard envelope payload. This dispatch is independent of algorithm
+	// dispatch (P26 BYOK): both apply to the same receipt.
+	var payload []byte
+	var payloadErr error
+	switch r.Type {
+	case dsr.TypeRV, dsr.TypeRVi, dsr.TypeRVf:
+		payload, payloadErr = dsr.CanonicalRvSignedPayload(r)
+	default:
+		payload, payloadErr = dsr.CanonicalSignedPayload(r)
+	}
+	if payloadErr != nil {
 		res.Valid = false
 		res.Err = dsrerrors.New(
 			dsrerrors.SignatureInvalid,
 			"The verifier could not construct the canonical signed payload for this receipt. "+
 				"The receipt may have malformed envelope fields.",
-			fmt.Sprintf("CanonicalSignedPayload error: %s", err.Error()),
+			fmt.Sprintf("canonical payload error: %s", payloadErr.Error()),
 		)
 		return res
 	}
