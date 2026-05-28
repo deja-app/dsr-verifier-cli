@@ -205,9 +205,9 @@ func TestRvCanonicalPreservesMilliseconds(t *testing.T) {
 		t.Errorf("IssuedAtRaw = %q, want %q", r.IssuedAtRaw, "2026-05-26T00:04:24.000Z")
 	}
 
-	payload, err := dsr.CanonicalRvSignedPayload(r)
-	if err != nil {
-		t.Fatalf("CanonicalRvSignedPayload: %v", err)
+	payload, canonErr := dsr.CanonicalRvSignedPayload(r)
+	if canonErr != nil {
+		t.Fatalf("CanonicalRvSignedPayload: %v", canonErr)
 	}
 
 	// The canonical payload must contain the raw issued_at with milliseconds.
@@ -227,9 +227,9 @@ func TestRvCanonicalCheckPassedIsArray(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	payload, err := dsr.CanonicalRvSignedPayload(r)
-	if err != nil {
-		t.Fatalf("CanonicalRvSignedPayload: %v", err)
+	payload, canonErr := dsr.CanonicalRvSignedPayload(r)
+	if canonErr != nil {
+		t.Fatalf("CanonicalRvSignedPayload: %v", canonErr)
 	}
 
 	// Unmarshal and check that checks_passed is an array.
@@ -257,9 +257,9 @@ func TestRvCanonicalReceiptsAttestedCountIsNumber(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	payload, err := dsr.CanonicalRvSignedPayload(r)
-	if err != nil {
-		t.Fatalf("CanonicalRvSignedPayload: %v", err)
+	payload, canonErr := dsr.CanonicalRvSignedPayload(r)
+	if canonErr != nil {
+		t.Fatalf("CanonicalRvSignedPayload: %v", canonErr)
 	}
 
 	var parsed map[string]json.RawMessage
@@ -287,9 +287,9 @@ func TestRvCanonical10FieldsSortOrder(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	payload, err := dsr.CanonicalRvSignedPayload(r)
-	if err != nil {
-		t.Fatalf("CanonicalRvSignedPayload: %v", err)
+	payload, canonErr := dsr.CanonicalRvSignedPayload(r)
+	if canonErr != nil {
+		t.Fatalf("CanonicalRvSignedPayload: %v", canonErr)
 	}
 
 	// Use json.Decoder to preserve key order.
