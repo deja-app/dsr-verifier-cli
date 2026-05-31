@@ -13,7 +13,7 @@ An auditor's job is to verify evidence, not to trust tools on faith. This CLI is
 auditable end-to-end:
 
 - **Audit the source.** Every line of verification logic is published at
-  `github.com/BeWallow/dsr-verifier-cli`. There is nothing to hide.
+  `github.com/deja-dev/dsr-verifier-cli`. There is nothing to hide.
 - **Rebuild from source.** The build is reproducible: same source + same Go 1.22.3 toolchain =
   byte-for-byte identical binary. See `BUILD.md`.
 - **Verify our binaries with your own builds.** Every release ships a GPG-signed `SHA256SUMS`
@@ -47,13 +47,13 @@ No login. No account. No network access. Just the `.dsr` file and the customer's
 **macOS (Homebrew — recommended):**
 
 ```bash
-brew install BeWallow/tap/dsr-verifier-cli
+brew install deja-dev/tap/dsr-verifier-cli
 ```
 
 **macOS, Linux, and Windows (direct download):**
 
 Download the binary for your platform from
-[GitHub Releases](https://github.com/BeWallow/dsr-verifier-cli/releases). Each release includes
+[GitHub Releases](https://github.com/deja-dev/dsr-verifier-cli/releases). Each release includes
 binaries for macOS (Apple Silicon and Intel), Linux (amd64 and arm64), and Windows (amd64), plus
 a GPG-signed `SHA256SUMS` file. Verify the checksum before running — see
 [docs/RELEASE.md](docs/RELEASE.md) for the full procedure.

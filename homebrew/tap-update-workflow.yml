@@ -1,8 +1,8 @@
-# Reference workflow for github.com/BeWallow/homebrew-tap
+# Reference workflow for github.com/deja-dev/homebrew-tap
 #
 # Copy this file to:
 #   .github/workflows/update-formula.yml
-# in the BeWallow/homebrew-tap repository.
+# in the deja-dev/homebrew-tap repository.
 #
 # This workflow listens for the "new-release" repository_dispatch event
 # sent by the dsr-verifier-cli release pipeline and updates the formula
