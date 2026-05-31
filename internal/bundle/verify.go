@@ -25,11 +25,12 @@ type BundleVerifyResult struct {
 	Frameworks  []string
 	IssuerKeyID string
 
-	ManifestSig   ManifestSigResult
-	SequenceInteg SeqIntegResult
-	PerReceipt    PerReceiptResult
-	CausalChain   CausalChainResult
-	RVCoverage    RVCoverageResult
+	ManifestSig    ManifestSigResult
+	SequenceInteg  SeqIntegResult
+	PerReceipt     PerReceiptResult
+	CausalChain    CausalChainResult
+	RVCoverage     RVCoverageResult
+	ClusterAnalysis ClusterAnalysisResult
 
 	DurationMS int64
 	ReportFile string
@@ -132,6 +133,9 @@ type RVCoverageResult struct {
 	TotalAnomalies int
 }
 
+// ClusterAnalysis holds the cluster_analysis_v1 result for this bundle.
+// Populated after all four verification checks have run.
+
 // ─────────────────────────────────────────────────────────────────────────────
 // VerifyBundle runs all four bundle checks and returns the aggregate result.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -166,6 +170,10 @@ func VerifyBundle(b *Bundle, provided *verify.PublicKeyWithID) *BundleVerifyResu
 	res.PerReceipt = VerifyPerReceipt(b.Receipts, provided)
 	res.CausalChain = VerifyCausalChain(b.Receipts)
 	res.RVCoverage = AnalyseRVCoverage(b.Receipts)
+
+	// cluster_analysis_v1: post-process the anomalies already detected above.
+	anomalies := ExtractAnomalies(res, b.Receipts)
+	res.ClusterAnalysis = AnalyseClusterPatterns(anomalies)
 
 	return res
 }
