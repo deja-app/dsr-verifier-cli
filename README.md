@@ -7,7 +7,7 @@ produced by [Déjà](https://deja.dev).
 
 ## Trust positioning
 
-**Open-source. MIT-licensed. Zero network calls. Reproducible builds.**
+**Open-source. Apache-2.0-licensed. Zero network calls. Reproducible builds.**
 
 An auditor's job is to verify evidence, not to trust tools on faith. This CLI is designed to be
 auditable end-to-end:
@@ -112,4 +112,4 @@ for the exact construction).
 
 ## License
 
-MIT — see LICENSE file.
+Apache-2.0 — see LICENSE and NOTICE files.
