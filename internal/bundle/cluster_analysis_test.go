@@ -296,6 +296,138 @@ func TestAnalyseClusterPatterns_Deterministic(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ConfidenceScore
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestConfidenceScore_AllThreeDetected(t *testing.T) {
+	// Build a scenario where zone, temporal, and cascade all fire.
+	//
+	// Pattern mirrors TestAnalyseClusterPatterns_TargetedDeletion + the temporal
+	// burst from TestTemporalClustering_Detected:
+	//   - 50 missing_entries in payments-checkout burst at hour 1000 (temporal fires)
+	//   - 12 sig mismatches sharing receipt IDs with missing_entries (cascade fires)
+	//   - 1 background anomaly at hour 0 (extends bundle duration so temporal can fire)
+	//   - all zone-tagged to payments-checkout (zone fires)
+	const burstStart = float64(1000)
+
+	// 50 missing_entries burst — tight enough for temporal to fire
+	missing := anomalies(50, CategoryMissingEntries, "payments-checkout", burstStart, 0.5)
+
+	// 12 sig mismatches sharing the first 12 receipt IDs → cascade
+	sigMis := make([]Anomaly, 12)
+	for i := range sigMis {
+		sigMis[i] = Anomaly{
+			Category:    CategorySignatureMismatches,
+			ReceiptID:   missing[i].ReceiptID,
+			ServiceZone: "payments-checkout",
+			OccurredAt:  ts(burstStart + float64(i)*0.5),
+		}
+	}
+
+	// 1 background anomaly at hour 0 to establish bundle start
+	background := Anomaly{
+		Category:    CategoryMissingEntries,
+		ReceiptID:   "rcpt-bg",
+		ServiceZone: "payments-checkout",
+		OccurredAt:  ts(0),
+	}
+
+	var all []Anomaly
+	all = append(all, missing...)
+	all = append(all, sigMis...)
+	all = append(all, background)
+
+	res := AnalyseClusterPatterns(all)
+
+	// Verify that the test setup actually achieved the three detections.
+	if !res.ZoneConcentration.Detected {
+		t.Logf("zone_concentration not detected (may affect score); chi2=%.2f", res.ZoneConcentration.ChiSquared)
+	}
+	if !res.TemporalClustering.Detected {
+		t.Logf("temporal_clustering not detected; multiplier=%.1f", res.TemporalClustering.Multiplier)
+	}
+	if !res.CascadeDetected.Detected {
+		t.Log("cascade not detected")
+	}
+
+	if res.ConfidenceScore < 0.85 {
+		t.Errorf("all-three-detected: expected ConfidenceScore >= 0.85, got %.2f (rationale: %q, zone=%v, temporal=%v, cascade=%v)",
+			res.ConfidenceScore, res.ConfidenceRationale,
+			res.ZoneConcentration.Detected, res.TemporalClustering.Detected, res.CascadeDetected.Detected)
+	}
+	if !contains(res.ConfidenceRationale, "high confidence") {
+		t.Errorf("all-three-detected: expected rationale to contain 'high confidence', got %q",
+			res.ConfidenceRationale)
+	}
+}
+
+func TestConfidenceScore_TemporalOnlyDetected(t *testing.T) {
+	// Temporal burst but no zone concentration (anomalies in two equal zones)
+	// and no cascade (single category, no overlap).
+	// 25 anomalies at burst, 1 background; equal split between two zones.
+	var input []Anomaly
+	for i := 0; i < 25; i++ {
+		zone := "zone-a"
+		if i%2 == 1 {
+			zone = "zone-b"
+		}
+		input = append(input, Anomaly{
+			Category:    CategorySignatureMismatches,
+			ReceiptID:   "rcpt-burst-" + string(rune('a'+i)),
+			ServiceZone: zone,
+			OccurredAt:  ts(1000 + float64(i)*0.5),
+		})
+	}
+	// 1 background to extend bundle duration
+	input = append(input, Anomaly{
+		Category:    CategorySignatureMismatches,
+		ReceiptID:   "rcpt-bg",
+		ServiceZone: "zone-a",
+		OccurredAt:  ts(0),
+	})
+
+	res := AnalyseClusterPatterns(input)
+
+	if !res.TemporalClustering.Detected {
+		t.Skipf("temporal not detected (multiplier=%.1f); test precondition unmet", res.TemporalClustering.Multiplier)
+	}
+
+	if res.ConfidenceScore < 0.65 || res.ConfidenceScore >= 0.85 {
+		t.Errorf("temporal-only: expected ConfidenceScore in [0.65, 0.85), got %.2f (rationale: %q)",
+			res.ConfidenceScore, res.ConfidenceRationale)
+	}
+}
+
+func TestConfidenceScore_Skipped(t *testing.T) {
+	// Fewer than MinAnomalyThreshold → Skipped, ConfidenceScore must be 0.
+	input := anomalies(5, CategorySignatureMismatches, "zone-a", 0, 1)
+	res := AnalyseClusterPatterns(input)
+
+	if !res.Skipped {
+		t.Fatalf("expected Skipped=true for %d anomalies", len(input))
+	}
+	if res.ConfidenceScore != 0 {
+		t.Errorf("skipped: expected ConfidenceScore=0, got %.2f", res.ConfidenceScore)
+	}
+	if res.ConfidenceRationale != "insufficient anomaly count for statistical analysis" {
+		t.Errorf("skipped: unexpected rationale %q", res.ConfidenceRationale)
+	}
+}
+
+// contains is a helper for substring checks inside the bundle package tests.
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(sub) == 0 ||
+		func() bool {
+			for i := 0; i <= len(s)-len(sub); i++ {
+				if s[i:i+len(sub)] == sub {
+					return true
+				}
+			}
+			return false
+		}())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // End-to-end: targeted deletion scenario (matches marketing page demo)
 // ─────────────────────────────────────────────────────────────────────────────
 

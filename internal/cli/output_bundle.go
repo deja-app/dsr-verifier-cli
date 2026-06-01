@@ -37,7 +37,7 @@ func (p *Printer) BundleHeader(bundleFile, keyFile string) {
 }
 
 // PrintBundleResults writes the full human-readable bundle verification output.
-func PrintBundleResults(p *Printer, res *bundle.BundleVerifyResult, bundleFile string, sizeBytes int64, reportFile string) {
+func PrintBundleResults(p *Printer, res *bundle.BundleVerifyResult, bundleFile string, sizeBytes int64, reportFile string, clusterResult *bundle.ClusterAnalysisResult) {
 	// Bundle metadata block.
 	p.Printf("Bundle:     %s", filepath.Base(bundleFile))
 	if sizeBytes > 0 {
@@ -173,6 +173,43 @@ func PrintBundleResults(p *Printer, res *bundle.BundleVerifyResult, bundleFile s
 	if reportFile != "" {
 		p.Printf("Output: verification report written to %s\n", p.Cyan(reportFile))
 	}
+
+	// Cluster-analysis section.
+	if clusterResult != nil {
+		p.Println("")
+		p.Println("── Anomaly Pattern Analysis " + strings.Repeat("─", lineWidth-27))
+		if clusterResult.Skipped {
+			p.Indent(p.Dim(fmt.Sprintf("Anomaly pattern analysis skipped (fewer than %d anomalies)", bundle.MinAnomalyThreshold)))
+		} else {
+			p.Detail("  Pattern", clusterResult.PatternSignature)
+			p.Detail("  Confidence", fmt.Sprintf("%.2f  (%s)", clusterResult.ConfidenceScore, clusterResult.ConfidenceRationale))
+			p.Detail("  Anomalies", fmt.Sprintf("%d", clusterResult.AnomalyCount))
+			if clusterResult.ZoneConcentration.Detected {
+				p.Detail("  Zone", fmt.Sprintf("%s (%.0f%% of anomalies, %s)",
+					clusterResult.ZoneConcentration.DominantZone,
+					clusterResult.ZoneConcentration.DominantShare*100,
+					clusterResult.ZoneConcentration.PValueLT))
+			}
+			if clusterResult.TemporalClustering.Detected {
+				p.Detail("  Temporal", fmt.Sprintf("%.0f× baseline rate in %dh window (%s)",
+					clusterResult.TemporalClustering.Multiplier,
+					clusterResult.TemporalClustering.WindowHours,
+					clusterResult.TemporalClustering.PValueLT))
+			}
+			if clusterResult.CascadeDetected.Detected && len(clusterResult.CascadeDetected.CategoryOverlaps) > 0 {
+				best := clusterResult.CascadeDetected.CategoryOverlaps[0]
+				for _, co := range clusterResult.CascadeDetected.CategoryOverlaps {
+					if co.Jaccard > best.Jaccard {
+						best = co
+					}
+				}
+				p.Detail("  Cascade", fmt.Sprintf("%.2f Jaccard across %d categories",
+					best.Jaccard,
+					len(clusterResult.CascadeDetected.CategoryOverlaps)+1))
+			}
+		}
+	}
+
 	p.Separator()
 }
 
@@ -284,6 +321,8 @@ type BundleJSONReport struct {
 
 	Failures []BundleJSONFailure `json:"failures"`
 
+	ClusterAnalysis *bundle.ClusterAnalysisResult `json:"cluster_analysis,omitempty"`
+
 	DurationMS int64 `json:"duration_ms"`
 	Offline    bool  `json:"offline"`
 }
@@ -320,7 +359,7 @@ type BundleJSONFailure struct {
 }
 
 // WriteBundleJSONReport encodes the bundle verification result as a JSON report.
-func WriteBundleJSONReport(w io.Writer, res *bundle.BundleVerifyResult, durationMS int64) error {
+func WriteBundleJSONReport(w io.Writer, res *bundle.BundleVerifyResult, durationMS int64, clusterResult *bundle.ClusterAnalysisResult) error {
 	result := "verified"
 	if !res.AllPassed() {
 		result = "failed"
@@ -383,6 +422,8 @@ func WriteBundleJSONReport(w io.Writer, res *bundle.BundleVerifyResult, duration
 	if report.Failures == nil {
 		report.Failures = []BundleJSONFailure{}
 	}
+
+	report.ClusterAnalysis = clusterResult
 
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

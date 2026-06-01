@@ -54,6 +54,8 @@ type ClusterAnalysisResult struct {
 	TemporalClustering TemporalClusteringResult `json:"temporal_clustering"`
 	CascadeDetected    CascadeResult            `json:"cascade_detected"`
 	PatternSignature   string                   `json:"pattern_signature"`
+	ConfidenceScore    float64                  `json:"confidence_score"`
+	ConfidenceRationale string                  `json:"confidence_rationale,omitempty"`
 }
 
 // ZoneConcentrationResult reports whether anomalies cluster in one service zone.
@@ -131,6 +133,8 @@ func AnalyseClusterPatterns(anomalies []Anomaly) ClusterAnalysisResult {
 	if len(anomalies) < MinAnomalyThreshold {
 		res.Skipped = true
 		res.PatternSignature = "nominal"
+		res.ConfidenceScore = 0
+		res.ConfidenceRationale = "insufficient anomaly count for statistical analysis"
 		return res
 	}
 
@@ -143,7 +147,89 @@ func AnalyseClusterPatterns(anomalies []Anomaly) ClusterAnalysisResult {
 		res.CascadeDetected.Detected,
 	)
 
+	res.ConfidenceScore, res.ConfidenceRationale = deriveConfidenceScore(
+		res.ZoneConcentration,
+		res.TemporalClustering,
+		res.CascadeDetected,
+		len(anomalies),
+	)
+
 	return res
+}
+
+// deriveConfidenceScore computes a deterministic confidence score in [0, 0.99]
+// and a one-line rationale string from the three test results and anomaly count.
+func deriveConfidenceScore(
+	zone ZoneConcentrationResult,
+	temporal TemporalClusteringResult,
+	cascade CascadeResult,
+	anomalyCount int,
+) (float64, string) {
+	base := 0.50 // baseline when all tests are inconclusive
+
+	// Zone concentration: chi-squared signal → up to +0.20
+	if zone.Detected {
+		base += 0.20
+	} else if zone.ChiSquared > chi2CriticalP001(maxInt(zone.NumZones-1, 1))*0.5 {
+		base += 0.08 // partial signal
+	}
+
+	// Temporal clustering: multiplier signal → up to +0.20
+	if temporal.Detected {
+		base += 0.20
+	} else if temporal.Multiplier >= TemporalMultiplierThreshold*0.5 {
+		base += 0.08 // partial signal
+	}
+
+	// Cascade: Jaccard signal → up to +0.20
+	if cascade.Detected {
+		base += 0.20
+	} else {
+		// partial: any pair with Jaccard > 0.25
+		for _, pair := range cascade.CategoryOverlaps {
+			if pair.Jaccard > 0.25 {
+				base += 0.08
+				break
+			}
+		}
+	}
+
+	// Anomaly count bonus: more anomalies → more statistical power → up to +0.10
+	countBonus := math.Min(0.10, float64(anomalyCount)/500.0*0.10)
+	base += countBonus
+
+	score := math.Round(math.Min(base, 0.99)*100) / 100
+
+	// Build rationale.
+	var rationale string
+	switch {
+	case zone.Detected && temporal.Detected && cascade.Detected:
+		rationale = "zone+temporal+cascade detected (high confidence)"
+	case zone.Detected && temporal.Detected:
+		rationale = "zone+temporal detected, cascade absent (high confidence)"
+	case zone.Detected && cascade.Detected:
+		rationale = "zone+cascade detected, temporal absent (high confidence)"
+	case temporal.Detected && cascade.Detected:
+		rationale = "temporal+cascade detected, zone absent (high confidence)"
+	case cascade.Detected:
+		rationale = "cascade detected, zone and temporal absent (moderate confidence)"
+	case zone.Detected && !temporal.Detected:
+		rationale = "zone concentration detected, temporal absent (moderate confidence)"
+	case temporal.Detected && !zone.Detected:
+		rationale = "temporal clustering detected, zone partial (moderate confidence)"
+	default:
+		rationale = "no patterns detected (low confidence baseline)"
+	}
+
+	return score, rationale
+}
+
+// maxInt returns the larger of a and b.
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

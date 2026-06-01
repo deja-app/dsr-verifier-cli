@@ -127,10 +127,13 @@ func runVerifyBundle(args []string, stdout, stderr io.Writer) int {
 		logResult = "failed"
 	}
 
+	// cluster_analysis_v1 result — already computed inside VerifyBundle.
+	clusterResult := &res.ClusterAnalysis
+
 	// Always write the JSON verification report alongside the bundle file.
 	reportFile := reportFilename(bundlePath)
 	if f, ferr := os.Create(reportFile); ferr == nil {
-		if encErr := WriteBundleJSONReport(f, res, durationMS); encErr != nil {
+		if encErr := WriteBundleJSONReport(f, res, durationMS, clusterResult); encErr != nil {
 			fmt.Fprintf(stderr, "warning: could not write verification report: %v\n", encErr)
 			reportFile = ""
 		}
@@ -152,7 +155,7 @@ func runVerifyBundle(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if opts.json {
-		if encErr := WriteBundleJSONReport(stdout, res, durationMS); encErr != nil {
+		if encErr := WriteBundleJSONReport(stdout, res, durationMS, clusterResult); encErr != nil {
 			fmt.Fprintf(stderr, "error: JSON encode failed: %v\n", encErr)
 			return exitParseError
 		}
@@ -162,7 +165,7 @@ func runVerifyBundle(args []string, stdout, stderr io.Writer) int {
 	// Human-readable output.
 	p := NewPrinter(stdout, !opts.noColor)
 	p.BundleHeader(bundlePath, opts.keyFile)
-	PrintBundleResults(p, res, bundlePath, b.SizeBytes, reportFile)
+	PrintBundleResults(p, res, bundlePath, b.SizeBytes, reportFile, clusterResult)
 	return exitCode
 }
 
