@@ -1,7 +1,11 @@
 package bundle
 
 import (
+	"crypto"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/rsa"
+	"crypto/sha256"
 	"fmt"
 	"sort"
 	"time"
@@ -145,22 +149,7 @@ func VerifyBundle(b *Bundle, provided *verify.PublicKeyWithID) *BundleVerifyResu
 		IssuerKeyID: b.Manifest.IssuerKeyID,
 	}
 
-	ed25519Key, ok := provided.Key.(ed25519.PublicKey)
-	if !ok {
-		res.ManifestSig = ManifestSigResult{
-			Valid: false,
-			KeyID: b.Manifest.IssuerKeyID,
-			Err: dsrerrors.New(
-				dsrerrors.SignatureInvalid,
-				"Bundle manifests require an Ed25519 public key. "+
-					"BYOK (RSA/ECDSA) keys are not supported for bundle manifest verification.",
-				fmt.Sprintf("key type: %T, expected: ed25519.PublicKey", provided.Key),
-			),
-		}
-	} else {
-		res.ManifestSig = VerifyManifestSignature(b.Manifest, ed25519Key)
-	}
-
+	res.ManifestSig = VerifyManifestSignature(b.Manifest, provided)
 	res.SequenceInteg = VerifySequenceIntegrity(b.Manifest)
 	res.PerReceipt = VerifyPerReceipt(b.Receipts, provided)
 	res.CausalChain = VerifyCausalChain(b.Receipts)
@@ -177,7 +166,12 @@ func VerifyBundle(b *Bundle, provided *verify.PublicKeyWithID) *BundleVerifyResu
 // 1. Manifest signature
 // ─────────────────────────────────────────────────────────────────────────────
 
-func VerifyManifestSignature(m *Manifest, pubKey ed25519.PublicKey) ManifestSigResult {
+// VerifyManifestSignature verifies the bundle manifest's signature using the
+// provided public key. It supports the same three algorithms used for individual
+// receipt verification: ed25519, RSA-PSS SHA-256, and ECDSA SHA-256. The key
+// type is detected from the provided PublicKeyWithID — no algorithm field is
+// declared in the manifest itself, so the key material drives dispatch.
+func VerifyManifestSignature(m *Manifest, provided *verify.PublicKeyWithID) ManifestSigResult {
 	res := ManifestSigResult{KeyID: m.IssuerKeyID}
 
 	payload, err := CanonicalManifestPayload(m)
@@ -192,18 +186,52 @@ func VerifyManifestSignature(m *Manifest, pubKey ed25519.PublicKey) ManifestSigR
 		return res
 	}
 
-	if !ed25519.Verify(pubKey, payload, m.Signature) {
+	var verified bool
+	var algorithmLabel string
+
+	switch pub := provided.Key.(type) {
+	case ed25519.PublicKey:
+		algorithmLabel = "ed25519"
+		verified = ed25519.Verify(pub, payload, m.Signature)
+
+	case *rsa.PublicKey:
+		algorithmLabel = "rsa-pss-sha256"
+		hashed := sha256.Sum256(payload)
+		opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA256}
+		verified = rsa.VerifyPSS(pub, crypto.SHA256, hashed[:], m.Signature, opts) == nil
+
+	case *ecdsa.PublicKey:
+		algorithmLabel = "ecdsa-sha256"
+		hashed := sha256.Sum256(payload)
+		verified = ecdsa.VerifyASN1(pub, hashed[:], m.Signature)
+
+	default:
 		res.Valid = false
 		res.Err = dsrerrors.New(
 			dsrerrors.SignatureInvalid,
 			fmt.Sprintf(
-				"The bundle manifest's Ed25519 signature does not verify against key %q. "+
+				"The provided public key type %T is not supported for bundle manifest verification. "+
+					"Supported key types: ed25519, RSA, ECDSA.",
+				provided.Key,
+			),
+			fmt.Sprintf("unsupported key type: %T", provided.Key),
+		)
+		return res
+	}
+
+	if !verified {
+		res.Valid = false
+		res.Err = dsrerrors.New(
+			dsrerrors.SignatureInvalid,
+			fmt.Sprintf(
+				"The bundle manifest's %s signature does not verify against key %q. "+
 					"This means either: (1) the bundle was not signed by this key, "+
 					"(2) the manifest fields or receipt list were modified after signing, or "+
-					"(3) the signature is corrupt.",
-				m.IssuerKeyID,
+					"(3) the signature is corrupt. "+
+					"Do not treat this bundle as evidence without resolving this failure.",
+				algorithmLabel, m.IssuerKeyID,
 			),
-			fmt.Sprintf("ed25519.Verify returned false for manifest; key_id=%s", m.IssuerKeyID),
+			fmt.Sprintf("%s verify returned false for manifest; key_id=%s", algorithmLabel, m.IssuerKeyID),
 		)
 		return res
 	}

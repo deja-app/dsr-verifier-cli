@@ -190,12 +190,17 @@ func validateManifest(m *Manifest) *dsrerrors.VerificationError {
 		)
 	}
 
-	if len(m.Signature) != 64 {
+	// Accept signatures of any plausible length:
+	//   ed25519: 64 bytes
+	//   RSA-PSS: 256 bytes (2048-bit key) or 512 bytes (4096-bit key)
+	//   ECDSA:   ASN.1/DER-encoded, typically 70–72 bytes for P-256
+	// The actual algorithm / key-type check happens during VerifyManifestSignature.
+	if len(m.Signature) < 64 {
 		return dsrerrors.New(
 			dsrerrors.MalformedReceipt,
-			fmt.Sprintf("The bundle manifest's signature field is %d bytes but ed25519 signatures are exactly 64 bytes.",
+			fmt.Sprintf("The bundle manifest's signature field is only %d bytes, which is too short for any supported signing algorithm (minimum 64 bytes for ed25519).",
 				len(m.Signature)),
-			fmt.Sprintf("signature length: %d, expected: 64", len(m.Signature)),
+			fmt.Sprintf("signature length: %d, minimum: 64", len(m.Signature)),
 		)
 	}
 

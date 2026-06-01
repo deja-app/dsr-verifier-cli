@@ -2,7 +2,7 @@
 //
 // A .dsr.bundle file is a ZIP archive containing:
 //
-//	manifest.json              signed by the vault's ed25519 key
+//	manifest.json              signed by the vault's signing key (ed25519, RSA-PSS, or ECDSA)
 //	receipts/NNNNN_<id>.dsr   individual DSR receipts (zero-padded seq prefix)
 //
 // The manifest signature covers a canonical payload that includes a hash of
@@ -56,7 +56,7 @@ type SeqRange struct {
 }
 
 // CanonicalManifestPayload constructs the canonical bytes covered by the
-// manifest's ed25519 signature.
+// manifest's signature (ed25519, RSA-PSS SHA-256, or ECDSA SHA-256).
 //
 // The payload is the sorted-key JSON of nine covered fields. The
 // receipts_hash field is SHA-256 of the canonical JSON of the entries
