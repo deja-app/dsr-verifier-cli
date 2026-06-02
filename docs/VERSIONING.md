@@ -4,6 +4,14 @@
 
 ---
 
+## Current release
+
+**v1.1.0** — released 2026-06-02
+
+See the [changelog](#changelog) below for what changed in this release.
+
+---
+
 ## Compatibility commitments
 
 ### Receipt format compatibility
@@ -69,7 +77,7 @@ The CLI advertises which DSR receipt format versions it supports in the `--versi
 output:
 
 ```
-dsr-verifier-cli v1.0.0 (commit: a3f8c2e)
+dsr-verifier-cli v1.1.0 (commit: <git-sha>)
 DSR/1.0.1 · MIT License · https://github.com/deja-dev/dsr-verifier-cli
 ```
 
@@ -90,3 +98,62 @@ binaries are always built with the pinned version for reproducibility.
 
 The minimum Go version required to build from source will not be increased within a
 major release without a deprecation notice in the release notes.
+
+---
+
+## Changelog
+
+### v1.1.0 (2026-06-02)
+
+**BYOK key-type support**
+
+- RSA-PSS receipts are now verified using `crypto/rsa.VerifyPSS` with
+  `PSSSaltLengthAuto`, accepting receipts signed by AWS KMS RSA_2048/RSA_4096
+  keys in RSASSA_PSS mode.
+- ECDSA receipts are now verified using `crypto/ecdsa.VerifyASN1`, accepting
+  the DER-encoded signatures produced by AWS KMS ECC keys. Both P-256 and P-384
+  curves are supported.
+- Previously only Ed25519 keys were accepted; BYOK customers using RSA-PSS or
+  ECDSA signing keys can now run offline verification without any server
+  dependency.
+
+**RV receipt canonical form (10-field)**
+
+- The receipt canonical form for RV (Retention Verification) receipt types has
+  been extended from 8 fields to 10 fields, matching the server-side
+  `rv-receipt-canonical.ts` implementation.
+- The `DSR/1.0` version string is now accepted in addition to `DSR/1.0.1` for
+  RV-type receipts, covering receipts issued by earlier server builds.
+- Receipts issued under the prior 8-field form continue to verify correctly
+  (backward-compatible).
+
+**V7.2-F1 — protocol test-vector pinning**
+
+- A CI parity check pins the CLI canonical-form output against the server
+  `rv-receipt-canonical.ts` test vectors, ensuring the two implementations
+  stay in sync across releases.
+
+**V7.1-F1 — zero-network empirical proof**
+
+- An import-graph audit and functional offline verification test confirm that
+  the CLI makes no network calls at any point during `verify` or `info`
+  execution. The proof is reproducible in CI without network access.
+
+**M-6.3-D — reproducible build proof**
+
+- The release pipeline now records SHA-256 checksums of binaries across
+  independent build runs and asserts bit-identical output, providing a
+  verifiable reproducible-build guarantee for all shipped artifacts.
+
+---
+
+### v1.0.0 (2026-01-15)
+
+Initial stable release.
+
+- `verify` and `info` commands for DSR/1.0.1 receipts.
+- Ed25519 signature verification (zero external dependencies).
+- Human and JSON (`--json`) output modes.
+- Persistent audit log at `~/.dsr-verifier/audit.log`.
+- Exit codes: 0 verified, 1 failed, 2 parse error, 3 not found, 4 invalid key.
+- Homebrew tap distribution for macOS (arm64, amd64) and Linux (arm64, amd64).

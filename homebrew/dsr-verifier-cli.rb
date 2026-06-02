@@ -2,6 +2,12 @@
 #
 # Install:
 #   brew install deja-dev/tap/dsr-verifier-cli
+#
+# NOTE (v1.1.0): The sha256 values below are placeholders. They must be
+# replaced with the actual checksums produced by the release CI run
+# (goreleaser / release.yml) before pushing this formula to the tap.
+# Run `sha256sum dsr-verifier-cli-v1.1.0-<platform>.tar.gz` on each
+# artifact and update the four sha256 lines accordingly.
 
 class DsrVerifierCli < Formula
   desc "Offline DSR/1.0.1 receipt and evidence bundle verifier"
