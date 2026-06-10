@@ -13,7 +13,6 @@ package bundle
 // analysis (output: PatternSignature = "nominal", all Detected = false).
 
 import (
-	"encoding/json"
 	"math"
 	"sort"
 	"time"
@@ -535,20 +534,14 @@ func derivePatternSignature(zone, temporal, cascade bool) string {
 // cluster_analysis_v1.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// r1ContentZone extracts the service_zone from an R1/R1-L/R1-N content blob.
-// Returns empty string when the field is absent or the JSON is invalid.
-type r1ContentZone struct {
-	ServiceZone string `json:"service_zone"`
-}
-
 // ExtractAnomalies converts the four failure categories from BundleVerifyResult
 // into a flat []Anomaly list suitable for AnalyseClusterPatterns.
 func ExtractAnomalies(res *BundleVerifyResult, receipts []*ParsedReceipt) []Anomaly {
 	// Build an index of receipt ID → ParsedReceipt for fast lookup.
-	receiptByID := make(map[string]*dsr.Receipt, len(receipts))
+	receiptByID := make(map[string]*dsr.Envelope, len(receipts))
 	for _, pr := range receipts {
 		if pr.Receipt != nil {
-			receiptByID[pr.Receipt.ID] = pr.Receipt
+			receiptByID[pr.Receipt.ReceiptID] = pr.Receipt
 		}
 	}
 
@@ -603,20 +596,20 @@ func ExtractAnomalies(res *BundleVerifyResult, receipts []*ParsedReceipt) []Anom
 	return anomalies
 }
 
-func extractServiceZone(r *dsr.Receipt) string {
-	if r == nil || len(r.Content) == 0 {
+func extractServiceZone(r *dsr.Envelope) string {
+	if r == nil || r.ServiceZone == nil {
 		return ""
 	}
-	var c r1ContentZone
-	if err := json.Unmarshal(r.Content, &c); err != nil {
-		return ""
-	}
-	return c.ServiceZone
+	return *r.ServiceZone
 }
 
-func extractTimestamp(r *dsr.Receipt) time.Time {
+func extractTimestamp(r *dsr.Envelope) time.Time {
 	if r == nil {
 		return time.Time{}
 	}
-	return r.IssuedAt
+	t, err := time.Parse(time.RFC3339, r.Timestamp)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
 }
