@@ -21,7 +21,12 @@ https://deja.dev/.well-known/dsr-signing-key
 Returns the same base64 public key. Independent of this repository.
 
 **3. Rekor transparency log**  
-The key is logged to the Sigstore Rekor public transparency log. Entry URL will be published here once logged. This provides a third-party, append-only record that the key existed at a specific point in time.
+Run once after this PR merges to log the key to the Sigstore public ledger:
+```bash
+echo -n "lgwBALQoqZMvD6o88u4EcUc76aTDPRinRixyCn3Qmew=" | \
+  cosign upload blob -f - rekor.sigstore.dev
+```
+Paste the resulting entry URL here. This gives a third-party, append-only timestamp proving the key existed before any receipt was issued.
 
 ## Using the key
 
