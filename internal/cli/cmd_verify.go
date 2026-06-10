@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -14,28 +13,36 @@ import (
 
 // verifyOpts holds parsed flags for the verify command.
 type verifyOpts struct {
-	keyFile string
-	json    bool
-	quiet   bool
-	noLog   bool
-	noColor bool
+	keyFile     string // --public-key / --key: managed Ed25519 key (base64 or SPKI PEM)
+	byokKeyFile string // --byok-key: BYOK customer key (RSA or ECDSA PEM)
+	json        bool
+	quiet       bool
+	noLog       bool
+	noColor     bool
 }
 
-// parseVerifyArgs scans args in any order (flags may come before or after the
-// receipt path). Returns the receipt path, parsed options, a help-requested
-// boolean, and any parse error.
+// parseVerifyArgs scans args in any order. Returns the receipt path, parsed
+// options, a help-requested boolean, and any parse error.
 func parseVerifyArgs(args []string, stderr io.Writer) (receipt string, opts verifyOpts, help bool, err error) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
-		case "--key", "-key":
+		case "--public-key", "--key", "-key":
 			i++
 			if i >= len(args) {
-				fmt.Fprintln(stderr, "error: --key requires a file path")
-				err = fmt.Errorf("--key requires a value")
+				fmt.Fprintln(stderr, "error: --public-key requires a file path")
+				err = fmt.Errorf("--public-key requires a value")
 				return
 			}
 			opts.keyFile = args[i]
+		case "--byok-key", "-byok-key":
+			i++
+			if i >= len(args) {
+				fmt.Fprintln(stderr, "error: --byok-key requires a file path")
+				err = fmt.Errorf("--byok-key requires a value")
+				return
+			}
+			opts.byokKeyFile = args[i]
 		case "--json", "-json":
 			opts.json = true
 		case "--quiet", "-quiet", "-q":
@@ -75,13 +82,8 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 	}
 	if receiptPath == "" {
 		fmt.Fprintln(stderr, "error: verify requires a receipt file argument")
-		fmt.Fprintln(stderr, "usage: dsr-verifier-cli verify <receipt.dsr> --key <pubkey>")
+		fmt.Fprintln(stderr, "usage: dsr-verify verify <receipt.dsr> --public-key <pubkey>")
 		return exitParseError
-	}
-	if opts.keyFile == "" {
-		fmt.Fprintln(stderr, "error: --key <pubkey> is required for verify")
-		fmt.Fprintln(stderr, "usage: dsr-verifier-cli verify <receipt.dsr> --key <pubkey>")
-		return exitKeyError
 	}
 
 	// Read receipt file.
@@ -95,52 +97,95 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		return exitMissingFile
 	}
 
-	// Read key file.
-	keyData, err := os.ReadFile(opts.keyFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Fprintf(stderr, "error: key file not found: %s\n", opts.keyFile)
-			return exitMissingFile
-		}
-		fmt.Fprintf(stderr, "error: cannot read key file %s: %v\n", opts.keyFile, err)
-		return exitMissingFile
-	}
-
 	// Parse receipt.
-	receipt, parseErr := dsr.Parse(receiptData)
+	envelope, parseErr := dsr.Parse(receiptData)
 	if parseErr != nil {
 		fmt.Fprintf(stderr, "error: malformed receipt: %s\n", parseErr.HumanMessage)
 		fmt.Fprintf(stderr, "detail: %s\n", parseErr.TechnicalDetail)
 		return exitParseError
 	}
 
-	// Parse public key.
-	providedKey, keyErr := verify.ParsePublicKeyFile(keyData)
-	if keyErr != nil {
-		fmt.Fprintf(stderr, "error: invalid key file: %s\n", keyErr.HumanMessage)
-		fmt.Fprintf(stderr, "detail: %s\n", keyErr.TechnicalDetail)
-		return exitKeyError
+	// Resolve the active key based on the receipt's algorithm.
+	var activeKey *verify.PublicKeyWithID
+	algo := envelope.SigAlgo()
+
+	switch algo {
+	case dsr.AlgoSHA256Legacy:
+		// No key required; hash comparison only.
+
+	case dsr.AlgoED25519V1:
+		if opts.keyFile == "" {
+			fmt.Fprintf(stderr, "error: receipt uses ed25519-v1 — provide the managed public key with --public-key\n")
+			return exitKeyError
+		}
+		keyData, readErr := os.ReadFile(opts.keyFile)
+		if readErr != nil {
+			if os.IsNotExist(readErr) {
+				fmt.Fprintf(stderr, "error: key file not found: %s\n", opts.keyFile)
+				return exitMissingFile
+			}
+			fmt.Fprintf(stderr, "error: cannot read key file %s: %v\n", opts.keyFile, readErr)
+			return exitMissingFile
+		}
+		parsed, keyErr := verify.ParsePublicKeyFile(keyData)
+		if keyErr != nil {
+			fmt.Fprintf(stderr, "error: invalid key file: %s\n", keyErr.HumanMessage)
+			fmt.Fprintf(stderr, "detail: %s\n", keyErr.TechnicalDetail)
+			return exitKeyError
+		}
+		activeKey = parsed
+
+	case dsr.AlgoRSAPSSSHA256, dsr.AlgoECDSASHA256:
+		if opts.byokKeyFile == "" {
+			fmt.Fprintf(stderr, "error: receipt uses %s — provide the BYOK public key with --byok-key\n", algo)
+			return exitKeyError
+		}
+		keyData, readErr := os.ReadFile(opts.byokKeyFile)
+		if readErr != nil {
+			if os.IsNotExist(readErr) {
+				fmt.Fprintf(stderr, "error: BYOK key file not found: %s\n", opts.byokKeyFile)
+				return exitMissingFile
+			}
+			fmt.Fprintf(stderr, "error: cannot read BYOK key file %s: %v\n", opts.byokKeyFile, readErr)
+			return exitMissingFile
+		}
+		parsed, keyErr := verify.ParsePublicKeyFile(keyData)
+		if keyErr != nil {
+			fmt.Fprintf(stderr, "error: invalid BYOK key file: %s\n", keyErr.HumanMessage)
+			fmt.Fprintf(stderr, "detail: %s\n", keyErr.TechnicalDetail)
+			return exitKeyError
+		}
+		activeKey = parsed
 	}
 
-	// Run all four checks.
+	// Run verification checks.
 	start := time.Now()
-	authResult := verify.KeyAuthority(receipt, providedKey)
-	sigResult := verify.Signature(receipt, providedKey)
-	hashResult := verify.ContentHash(receipt)
-	causalResult := verify.CausalRefs(receipt)
+	authResult := verify.KeyAuthority(envelope, activeKey)
+	sigResult := verify.Signature(envelope, activeKey)
 	durationMS := time.Since(start).Milliseconds()
 
+	timestamp := envelope.Timestamp
+	if envelope.IssuedAt != nil {
+		timestamp = *envelope.IssuedAt
+	}
+
+	keyID := ""
+	if envelope.SigningKeyID != nil {
+		keyID = *envelope.SigningKeyID
+	}
+
 	results := &VerifyResults{
-		ReceiptID:    receipt.ID,
-		ReceiptType:  receipt.Type,
-		VaultID:      receipt.VaultID,
-		IssuedAt:     receipt.IssuedAt.UTC().Format(time.RFC3339),
+		ReceiptID:    envelope.ReceiptID,
+		ReceiptType:  envelope.Type,
+		VaultID:      envelope.VaultID,
+		Timestamp:    timestamp,
+		Algorithm:    algo,
+		FormVersion:  envelope.FormVersion(),
 		KeyAuthority: authResult,
 		Sig:          sigResult,
-		Hash:         hashResult,
-		Causal:       causalResult,
 		DurationMS:   durationMS,
 	}
+	_ = keyID
 
 	exitCode := exitSuccess
 	if !results.AllPassed() {
@@ -152,7 +197,6 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		logResult = "failed"
 	}
 
-	// Write audit log unless suppressed.
 	if !opts.noLog {
 		results.LogFile = DefaultLogFile
 		if lerr := WriteLogEntry(DefaultLogFile, "verify", receiptPath, logResult, durationMS); lerr != nil {
@@ -172,61 +216,42 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		return exitCode
 	}
 
-	// Human-readable output.
 	p := NewPrinter(stdout, !opts.noColor)
 	p.Header(receiptPath, opts.keyFile)
 	PrintVerifyResults(p, results)
 	return exitCode
 }
 
-// parseInfoFromContent extracts a display-friendly string map from content JSON.
-func parseInfoFromContent(raw json.RawMessage) map[string]string {
-	var m map[string]interface{}
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return nil
-	}
-	out := make(map[string]string, len(m))
-	for k, v := range m {
-		switch sv := v.(type) {
-		case string:
-			out[k] = sv
-		case float64:
-			out[k] = fmt.Sprintf("%g", sv)
-		case bool:
-			if sv {
-				out[k] = "true"
-			} else {
-				out[k] = "false"
-			}
-		default:
-			b, _ := json.Marshal(v)
-			out[k] = string(b)
-		}
-	}
-	return out
-}
-
 const verifyHelp = `
-Usage: dsr-verifier-cli verify <receipt.dsr> --key <pubkey> [flags]
+Usage: dsr-verify verify <receipt.dsr> [flags]
 
-Verify a DSR/1.0.1 receipt's signature, content integrity, key authority,
-and structural causal references. All checks run offline with zero network calls.
+Verify a DSR receipt's signature and key authority. All checks run offline
+with zero network calls to Déjà or any external service.
 
 Arguments:
-  <receipt.dsr>   path to the .dsr receipt file to verify
+  <receipt.dsr>        path to the .dsr receipt file to verify
 
 Flags:
-  --key <file>    path to the PEM-encoded ed25519 public key (required)
-  --json          machine-readable JSON output
-  --quiet         minimal output; rely on exit code
-  --no-log        disable the local audit log (./verifier.log by default)
-  --no-color      disable ANSI color codes in output
-  --help          this help
+  --public-key <file>  path to the managed Ed25519 public key
+                       (base64 raw 32 bytes, or SPKI PEM)
+  --byok-key <file>    path to the BYOK customer public key (PEM, RSA or ECDSA)
+                       required for rsa-pss-sha256 and ecdsa-sha256 receipts
+  --json               machine-readable JSON output
+  --quiet              minimal output; rely on exit code
+  --no-log             disable the local audit log (./verifier.log by default)
+  --no-color           disable ANSI color codes in output
+  --help               this help
+
+Algorithm selection:
+  sha256-legacy        no key required
+  ed25519-v1           --public-key required
+  rsa-pss-sha256       --byok-key required
+  ecdsa-sha256         --byok-key required
 
 Exit codes:
   0   all checks passed
   1   one or more verification checks failed
   2   receipt file is malformed or cannot be parsed
   3   receipt or key file not found
-  4   key file is not a valid ed25519 public key
+  4   key file is not a valid public key
 `

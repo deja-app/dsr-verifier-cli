@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/deja-dev/dsr-verifier-cli/internal/verify"
 	dsrerrors "github.com/deja-dev/dsr-verifier-cli/internal/errors"
 )
 
@@ -15,6 +14,8 @@ type JSONOutput struct {
 	ReceiptID      string        `json:"receipt_id"`
 	ReceiptType    string        `json:"receipt_type"`
 	VaultID        string        `json:"vault_id"`
+	Algorithm      string        `json:"algorithm"`
+	FormVersion    string        `json:"form_version"`
 	Result         string        `json:"result"`
 	Checks         JSONChecks    `json:"checks"`
 	FailureReasons []JSONFailure `json:"failure_reasons"`
@@ -26,13 +27,12 @@ type JSONOutput struct {
 type JSONChecks struct {
 	KeyAuthority JSONCheckResult `json:"key_authority"`
 	Signature    JSONCheckResult `json:"signature"`
-	ContentHash  JSONCheckResult `json:"content_hash"`
-	CausalRefs   JSONCheckResult `json:"causal_refs"`
 }
 
 // JSONCheckResult is the result of a single verification check.
 type JSONCheckResult struct {
 	Passed  bool            `json:"passed"`
+	Skipped bool            `json:"skipped,omitempty"`
 	Details json.RawMessage `json:"details,omitempty"`
 }
 
@@ -63,25 +63,45 @@ func buildJSONOutput(r *VerifyResults) *JSONOutput {
 		ReceiptID:   r.ReceiptID,
 		ReceiptType: r.ReceiptType,
 		VaultID:     r.VaultID,
+		Algorithm:   r.Algorithm,
+		FormVersion: r.FormVersion,
 		Result:      result,
 		DurationMS:  r.DurationMS,
 		Offline:     true,
 	}
 
-	out.Checks.KeyAuthority = checkResult(r.KeyAuthority.Valid, keyAuthorityDetails(r.KeyAuthority))
-	out.Checks.Signature = checkResult(r.Sig.Valid, signatureDetails(r.Sig))
-	out.Checks.ContentHash = checkResult(r.Hash.Valid, contentHashDetails(r.Hash))
-	out.Checks.CausalRefs = checkResult(r.Causal.Valid, causalRefsDetails(r.Causal))
+	if r.KeyAuthority != nil {
+		det := map[string]string{
+			"claimed_key_id":  r.KeyAuthority.ClaimedKeyID,
+			"provided_key_id": r.KeyAuthority.ProvidedKeyID,
+		}
+		b, _ := json.Marshal(det)
+		out.Checks.KeyAuthority = JSONCheckResult{
+			Passed:  r.KeyAuthority.Valid,
+			Skipped: r.KeyAuthority.Skipped,
+			Details: json.RawMessage(b),
+		}
+	}
 
-	// Collect failure reasons in check order.
+	if r.Sig != nil {
+		det := map[string]interface{}{
+			"algorithm":        r.Sig.Algorithm,
+			"canonical_len":    r.Sig.CanonicalLen,
+			"public_key_sha256": r.Sig.PublicKeyDigest,
+		}
+		b, _ := json.Marshal(det)
+		out.Checks.Signature = JSONCheckResult{
+			Passed:  r.Sig.Valid,
+			Details: json.RawMessage(b),
+		}
+	}
+
 	for _, f := range []struct {
 		name string
 		err  *dsrerrors.VerificationError
 	}{
 		{"key_authority", r.KeyAuthority.Err},
 		{"signature", r.Sig.Err},
-		{"content_hash", r.Hash.Err},
-		{"causal_refs", r.Causal.Err},
 	} {
 		if f.err != nil {
 			out.FailureReasons = append(out.FailureReasons, JSONFailure{
@@ -99,68 +119,17 @@ func buildJSONOutput(r *VerifyResults) *JSONOutput {
 	return out
 }
 
-func checkResult(passed bool, details interface{}) JSONCheckResult {
-	b, _ := json.Marshal(details)
-	return JSONCheckResult{Passed: passed, Details: json.RawMessage(b)}
-}
-
-func keyAuthorityDetails(r *verify.KeyAuthorityResult) interface{} {
-	return map[string]string{
-		"claimed_key_id":  r.ClaimedKeyID,
-		"provided_key_id": r.ProvidedKeyID,
-	}
-}
-
-func signatureDetails(r *verify.SignatureResult) interface{} {
-	return map[string]string{
-		"algorithm":        r.Algorithm,
-		"key_id":           r.KeyID,
-		"public_key_sha256": r.PublicKeyDigest,
-		"signature_hex":    r.SignatureHex,
-	}
-}
-
-func contentHashDetails(r *verify.ContentHashResult) interface{} {
-	return map[string]string{
-		"algorithm": r.Algorithm,
-		"computed":  r.ComputedHash,
-		"stored":    r.StoredHash,
-	}
-}
-
-func causalRefsDetails(r *verify.CausalRefsResult) interface{} {
-	if r.PRURL == "" && r.CommitSHA == "" {
-		return map[string]interface{}{
-			"applicable": false,
-			"note":       "receipt type does not carry causal references",
-		}
-	}
-	d := map[string]interface{}{
-		"pr_url":    r.PRURL,
-		"commit_sha": r.CommitSHA,
-	}
-	if r.MergedAt != "" {
-		d["merged_at"] = r.MergedAt
-	}
-	if len(r.MalformedFields) > 0 {
-		d["malformed_fields"] = r.MalformedFields
-	}
-	return d
-}
-
 // JSONInfoOutput is the --json output for the info command.
 type JSONInfoOutput struct {
-	Version     string          `json:"version"`
-	ReceiptID   string          `json:"receipt_id"`
-	ReceiptType string          `json:"receipt_type"`
-	VaultID     string          `json:"vault_id"`
-	IssuedAt    string          `json:"issued_at"`
-	SigningKeyID string          `json:"signing_key_id"`
-	Algorithm   string          `json:"signing_algorithm"`
-	ContentHash string          `json:"content_hash"`
-	Content     json.RawMessage `json:"content"`
-	Verified    bool            `json:"verified"`
-	Note        string          `json:"note"`
+	Version     string `json:"version"`
+	ReceiptID   string `json:"receipt_id"`
+	ReceiptType string `json:"receipt_type"`
+	VaultID     string `json:"vault_id"`
+	Timestamp   string `json:"timestamp"`
+	SigningKeyID string `json:"signing_key_id,omitempty"`
+	Algorithm   string `json:"signing_algorithm"`
+	Verified    bool   `json:"verified"`
+	Note        string `json:"note"`
 }
 
 // WriteJSONInfo emits the info JSON document to w.

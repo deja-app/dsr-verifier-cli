@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/deja-dev/dsr-verifier-cli/internal/dsr"
 )
@@ -55,7 +54,7 @@ func runInfo(args []string, stdout, stderr io.Writer) int {
 	}
 	if receiptPath == "" {
 		fmt.Fprintln(stderr, "error: info requires a receipt file argument")
-		fmt.Fprintln(stderr, "usage: dsr-verifier-cli info <receipt.dsr>")
+		fmt.Fprintln(stderr, "usage: dsr-verify info <receipt.dsr>")
 		return exitParseError
 	}
 
@@ -69,26 +68,27 @@ func runInfo(args []string, stdout, stderr io.Writer) int {
 		return exitMissingFile
 	}
 
-	receipt, parseErr := dsr.Parse(receiptData)
+	envelope, parseErr := dsr.Parse(receiptData)
 	if parseErr != nil {
 		fmt.Fprintf(stderr, "error: malformed receipt: %s\n", parseErr.HumanMessage)
 		fmt.Fprintf(stderr, "detail: %s\n", parseErr.TechnicalDetail)
 		return exitParseError
 	}
 
-	issuedAt := receipt.IssuedAt.UTC().Format(time.RFC3339)
+	keyID := ""
+	if envelope.SigningKeyID != nil {
+		keyID = *envelope.SigningKeyID
+	}
 
 	if opts.json {
 		out := &JSONInfoOutput{
-			Version:      Version,
-			ReceiptID:    receipt.ID,
-			ReceiptType:  receipt.Type,
-			VaultID:      receipt.VaultID,
-			IssuedAt:     issuedAt,
-			SigningKeyID:  receipt.SigningKeyID,
-			Algorithm:    receipt.SigningAlgorithm,
-			ContentHash:  receipt.ContentHash,
-			Content:      receipt.Content,
+			Version:     Version,
+			ReceiptID:   envelope.ReceiptID,
+			ReceiptType: envelope.Type,
+			VaultID:     envelope.VaultID,
+			Timestamp:   envelope.Timestamp,
+			SigningKeyID: keyID,
+			Algorithm:   envelope.SigAlgo(),
 		}
 		if encErr := WriteJSONInfo(stdout, out); encErr != nil {
 			fmt.Fprintf(stderr, "error: %v\n", encErr)
@@ -98,15 +98,14 @@ func runInfo(args []string, stdout, stderr io.Writer) int {
 	}
 
 	p := NewPrinter(stdout, !opts.noColor)
-	contentSummary := parseInfoFromContent(receipt.Content)
-	PrintInfo(p, receipt.ID, receipt.Type, receipt.VaultID, issuedAt,
-		receipt.SigningKeyID, receipt.SigningAlgorithm, receipt.ContentHash,
-		contentSummary)
+	p.Header(receiptPath, "")
+	PrintInfo(p, envelope.ReceiptID, envelope.Type, envelope.VaultID,
+		envelope.Timestamp, keyID, envelope.SigAlgo())
 	return exitSuccess
 }
 
 const infoHelp = `
-Usage: dsr-verifier-cli info <receipt.dsr> [flags]
+Usage: dsr-verify info <receipt.dsr> [flags]
 
 Display receipt metadata without performing verification. Useful for quick
 inspection when the public key is not available. This command does NOT verify

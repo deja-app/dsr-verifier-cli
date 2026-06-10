@@ -1,104 +1,67 @@
 package dsr
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	dsrerrors "github.com/deja-dev/dsr-verifier-cli/internal/errors"
 )
 
-// VersionRV is the version string used by RV receipts issued by the server.
-// RV receipts are signed with DSR/1.0 and must verify forever — no server
-// change is needed; the CLI accepts DSR/1.0 exclusively for RV types.
-const VersionRV = "DSR/1.0"
-
-// isRVType reports whether t is an RV receipt type (RV, RV-i, RV-f).
-// RV receipts carry version "DSR/1.0" and a 10-field signed payload.
-func isRVType(t string) bool {
-	return t == TypeRV || t == TypeRVi || t == TypeRVf
-}
-
-// Parse parses and strictly validates a DSR receipt from raw JSON bytes.
+// Parse parses a DSR receipt from raw JSON bytes into an Envelope.
 //
-// Strict mode: unknown fields are rejected, all required fields must be
-// present and non-zero, signing algorithm must be a recognised value, and
-// type must be a recognized receipt type.
+// The parser is intentionally lenient: unknown fields are silently ignored.
+// This lets the verifier work with receipts that carry newer optional fields
+// that this version of the CLI has not yet enumerated. Required field
+// validation happens after parsing.
 //
-// Version acceptance:
-//   - Standard types (R1, R1-L, R1-N, R2): version must be "DSR/1.0.1".
-//   - RV types (RV, RV-i, RV-f): version must be "DSR/1.0". RV receipts are
-//     issued with DSR/1.0 and must verify forever — no server change needed.
-//
-// Any deviation returns a MalformedReceipt error with diagnostic details.
-func Parse(data []byte) (*Receipt, *dsrerrors.VerificationError) {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-
-	var r Receipt
-	if err := dec.Decode(&r); err != nil {
-		offset := offsetFromError(err, data)
+// Version policy: any dsr_version beginning with "DSR/" is accepted. The
+// verifier does not gate on a specific patch version — the canonical form
+// rules are additive and backward-compatible.
+func Parse(data []byte) (*Envelope, *dsrerrors.VerificationError) {
+	var e Envelope
+	if err := json.Unmarshal(data, &e); err != nil {
+		offset := jsonErrorOffset(err)
 		return nil, dsrerrors.New(
 			dsrerrors.MalformedReceipt,
-			"The receipt file could not be parsed as a valid DSR receipt. "+
+			"The receipt file could not be parsed as valid JSON. "+
 				"The file may be corrupt, truncated, or not a DSR receipt.",
 			fmt.Sprintf("JSON parse error at byte offset %d: %s", offset, err.Error()),
 		)
 	}
 
-	// Capture the raw issued_at string verbatim for use in the RV canonical form.
-	// time.Time JSON unmarshaling parses RFC3339 correctly but loses sub-second
-	// precision when re-formatted (e.g. ".000Z" becomes "Z"). The RV canonical
-	// form must use the exact string as stored (e.g. "2026-01-01T00:00:00.000Z").
-	var rawFields struct {
-		IssuedAt string `json:"issued_at"`
-	}
-	// This unmarshal ignores unknown fields — it only extracts issued_at.
-	// Errors here are non-fatal (IssuedAtRaw will be empty; fallback to time.Time formatting).
-	_ = json.Unmarshal(data, &rawFields)
-	r.IssuedAtRaw = rawFields.IssuedAt
-
-	if verr := validate(&r); verr != nil {
+	if verr := validateEnvelope(&e); verr != nil {
 		return nil, verr
 	}
 
-	return &r, nil
+	return &e, nil
 }
 
-// validate checks that all required fields are present and hold valid values.
-func validate(r *Receipt) *dsrerrors.VerificationError {
+func validateEnvelope(e *Envelope) *dsrerrors.VerificationError {
 	var missing []string
 
-	if r.ID == "" {
-		missing = append(missing, "id")
+	if e.DSRVersion == "" {
+		missing = append(missing, "dsr_version")
 	}
-	if r.Version == "" {
-		missing = append(missing, "version")
-	}
-	if r.Type == "" {
+	if e.Type == "" {
 		missing = append(missing, "type")
 	}
-	if r.VaultID == "" {
+	if e.ReceiptID == "" {
+		missing = append(missing, "receipt_id")
+	}
+	if e.VaultID == "" {
 		missing = append(missing, "vault_id")
 	}
-	if r.IssuedAt.IsZero() {
-		missing = append(missing, "issued_at")
+	if e.Timestamp == "" {
+		missing = append(missing, "timestamp")
 	}
-	if len(r.Content) == 0 {
-		missing = append(missing, "content")
+	if e.Actor == "" {
+		missing = append(missing, "actor")
 	}
-	if r.ContentHash == "" {
-		missing = append(missing, "content_hash")
+	if e.Origin == "" {
+		missing = append(missing, "origin")
 	}
-	if r.SigningKeyID == "" {
-		missing = append(missing, "signing_key_id")
-	}
-	if r.SigningAlgorithm == "" {
-		missing = append(missing, "signing_algorithm")
-	}
-	if len(r.Signature) == 0 {
+	if e.Signature == "" {
 		missing = append(missing, "signature")
 	}
 
@@ -106,148 +69,62 @@ func validate(r *Receipt) *dsrerrors.VerificationError {
 		return dsrerrors.New(
 			dsrerrors.MalformedReceipt,
 			fmt.Sprintf(
-				"The receipt is missing required fields: %s. A valid DSR receipt must include all required envelope fields.",
+				"The receipt is missing required envelope fields: %s.",
 				strings.Join(missing, ", "),
 			),
 			fmt.Sprintf("missing fields: [%s]", strings.Join(missing, ", ")),
 		)
 	}
 
-	// Version check: RV types accept "DSR/1.0"; all other types require "DSR/1.0.1".
-	// RV receipts are issued with DSR/1.0 and must verify forever — Option A decision.
-	if isRVType(r.Type) {
-		if r.Version != VersionRV {
-			return dsrerrors.New(
-				dsrerrors.MalformedReceipt,
-				fmt.Sprintf(
-					"This RV receipt declares version %q but RV receipts must carry version \"DSR/1.0\". "+
-						"The receipt may be corrupt or was generated by an unsupported server version.",
-					r.Version,
-				),
-				fmt.Sprintf("version field: %q, expected: %q (for RV type %q)", r.Version, VersionRV, r.Type),
-			)
-		}
-	} else {
-		if r.Version != Version {
-			return dsrerrors.New(
-				dsrerrors.MalformedReceipt,
-				fmt.Sprintf(
-					"This receipt declares version %q but this verifier only understands DSR/1.0.1 "+
-						"for standard receipt types (R1, R1-L, R1-N, R2). "+
-						"If the receipt is from a newer version of Déjà, update the verifier CLI.",
-					r.Version,
-				),
-				fmt.Sprintf("version field: %q, expected: %q", r.Version, Version),
-			)
-		}
-	}
-
-	if !ValidType(r.Type) {
+	if !strings.HasPrefix(e.DSRVersion, "DSR/") {
 		return dsrerrors.New(
 			dsrerrors.MalformedReceipt,
 			fmt.Sprintf(
-				"The receipt type %q is not a recognized DSR/1.0.1 receipt type. "+
-					"Valid types are: R1, R1-L, R1-N, R2, RV, RV-i, RV-f.",
-				r.Type,
+				"The receipt declares version %q which does not begin with \"DSR/\". "+
+					"The file may not be a DSR receipt.",
+				e.DSRVersion,
 			),
-			fmt.Sprintf("type field: %q, valid types: [R1, R1-L, R1-N, R2, RV, RV-i, RV-f]", r.Type),
+			fmt.Sprintf("dsr_version: %q", e.DSRVersion),
 		)
 	}
 
-	switch r.SigningAlgorithm {
-	case SigningAlgorithmED25519, SigningAlgorithmRSAPSS, SigningAlgorithmECDSA:
+	if !KnownTypes[e.Type] {
+		return dsrerrors.New(
+			dsrerrors.MalformedReceipt,
+			fmt.Sprintf(
+				"The receipt type %q is not a recognized DSR receipt type. "+
+					"Valid types are: R0, R1, R1-L, R1-N, R2, R2-F, R2-R, RV, RE, RG.",
+				e.Type,
+			),
+			fmt.Sprintf("type: %q", e.Type),
+		)
+	}
+
+	algo := e.SigAlgo()
+	switch algo {
+	case AlgoSHA256Legacy, AlgoED25519V1, AlgoRSAPSSSHA256, AlgoECDSASHA256:
 		// accepted
 	default:
 		return dsrerrors.New(
 			dsrerrors.UnsupportedAlgorithm,
 			fmt.Sprintf(
-				"The receipt claims signing algorithm %q which is not supported by this verifier. "+
-					"Supported algorithms are: ed25519, rsa-pss-sha256, ecdsa-sha256. "+
-					"Contact Déjà support if you believe this receipt was produced by a current Déjà release.",
-				r.SigningAlgorithm,
+				"The receipt declares signing algorithm %q which this verifier does not support. "+
+					"Supported algorithms: sha256-legacy, ed25519-v1, rsa-pss-sha256, ecdsa-sha256.",
+				algo,
 			),
-			fmt.Sprintf("signing_algorithm field: %q, supported: [%s, %s, %s]",
-				r.SigningAlgorithm, SigningAlgorithmED25519, SigningAlgorithmRSAPSS, SigningAlgorithmECDSA),
+			fmt.Sprintf("signature_algorithm: %q", algo),
 		)
-	}
-
-	// issued_at must not be the zero value (already checked) and must be sensible.
-	// Receipts before 2020-01-01 or more than 1 hour in the future are suspicious
-	// but not necessarily invalid — we warn via the TechnicalDetail only.
-	earliest := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	if r.IssuedAt.Before(earliest) {
-		return dsrerrors.New(
-			dsrerrors.MalformedReceipt,
-			fmt.Sprintf(
-				"The receipt's issued_at timestamp (%s) predates Déjà's existence. "+
-					"The timestamp field may be corrupt or zeroed.",
-				r.IssuedAt.UTC().Format(time.RFC3339),
-			),
-			fmt.Sprintf("issued_at: %s, earliest plausible: %s", r.IssuedAt.UTC().Format(time.RFC3339), earliest.Format(time.RFC3339)),
-		)
-	}
-
-	// content_hash must be a 64-character hex string (SHA-256 = 32 bytes = 64 hex chars).
-	if len(r.ContentHash) != 64 {
-		return dsrerrors.New(
-			dsrerrors.MalformedReceipt,
-			fmt.Sprintf(
-				"The receipt's content_hash field is %d characters but a SHA-256 hex digest is exactly 64 characters. "+
-					"The field may be truncated or use a different encoding.",
-				len(r.ContentHash),
-			),
-			fmt.Sprintf("content_hash length: %d chars, expected: 64 hex chars", len(r.ContentHash)),
-		)
-	}
-	for _, c := range r.ContentHash {
-		if !isHexChar(c) {
-			return dsrerrors.New(
-				dsrerrors.MalformedReceipt,
-				"The receipt's content_hash field contains non-hexadecimal characters. "+
-					"It must be a lowercase hex-encoded SHA-256 digest.",
-				fmt.Sprintf("invalid character %q in content_hash", c),
-			)
-		}
 	}
 
 	return nil
 }
 
-// offsetFromError attempts to extract a byte offset from a JSON syntax error.
-// Returns -1 if the error type does not carry offset information.
-func offsetFromError(err error, _ []byte) int64 {
-	var synErr *json.SyntaxError
-	if errAs(err, &synErr) {
-		return synErr.Offset
+func jsonErrorOffset(err error) int64 {
+	if se, ok := err.(*json.SyntaxError); ok {
+		return se.Offset
 	}
-	var unmarshalErr *json.UnmarshalTypeError
-	if errAs(err, &unmarshalErr) {
-		return unmarshalErr.Offset
+	if ue, ok := err.(*json.UnmarshalTypeError); ok {
+		return ue.Offset
 	}
 	return -1
-}
-
-// errAs is a thin wrapper over errors.As to avoid importing "errors" alongside
-// our own dsrerrors package in this file.
-func errAs(err error, target interface{}) bool {
-	// Use type assertion directly for the two concrete types we care about.
-	switch t := target.(type) {
-	case **json.SyntaxError:
-		var synErr *json.SyntaxError
-		if e, ok := err.(*json.SyntaxError); ok {
-			synErr = e
-			*t = synErr
-			return true
-		}
-	case **json.UnmarshalTypeError:
-		if e, ok := err.(*json.UnmarshalTypeError); ok {
-			*t = e
-			return true
-		}
-	}
-	return false
-}
-
-func isHexChar(c rune) bool {
-	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 }

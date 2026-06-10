@@ -1,17 +1,15 @@
-// Package verify implements the four independent verification checks for a
-// DSR/1.0.1 receipt. Each function is stateless and pure: given the same
-// inputs they produce the same output, with no side effects.
+// Package verify implements offline cryptographic verification of DSR receipts
+// in the ExternalDSREnvelope format. Every function is stateless and pure —
+// given the same inputs they produce the same output, with zero network calls.
 //
-// Verification order mandated by the spec (key authority before signature):
+// Verification steps for a single receipt:
 //
-//  1. KeyAuthority   — wrong key file is caught before we waste time on crypto
-//  2. Signature      — ed25519 signature over the canonical signed payload
-//  3. ContentHash    — SHA-256 of canonical content vs. content_hash field
-//  4. CausalRefs     — structural validation of PR/commit identifiers
+//  1. KeyAuthority  — key_id in receipt matches key_id in provided key file
+//  2. Signature     — cryptographic check; dispatches on signature_algorithm
+//  3. ChainHash     — bundle-internal prior_hash consistency (optional)
 //
-// Each function returns a result struct containing a boolean Valid flag plus
-// all diagnostic fields. Failures are represented as *dsrerrors.VerificationError
-// values so callers can access both the typed class and the human message.
+// sha256-legacy receipts use a hash-comparison "signature" (not a public-key
+// scheme); KeyAuthority is skipped and no public key is required.
 package verify
 
 import (
@@ -21,55 +19,61 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"regexp"
-	"time"
 
 	"github.com/deja-dev/dsr-verifier-cli/internal/dsr"
 	dsrerrors "github.com/deja-dev/dsr-verifier-cli/internal/errors"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. Key authority check
+// 1. Key authority
 // ─────────────────────────────────────────────────────────────────────────────
 
 // KeyAuthorityResult is returned by KeyAuthority.
 type KeyAuthorityResult struct {
-	Valid          bool
-	ClaimedKeyID   string
-	ProvidedKeyID  string
-	Err            *dsrerrors.VerificationError
+	Valid         bool
+	ClaimedKeyID  string
+	ProvidedKeyID string
+	Skipped       bool // true for sha256-legacy (no public-key scheme)
+	Err           *dsrerrors.VerificationError
 }
 
-// KeyAuthority compares the receipt's signing_key_id field against the key_id
-// extracted from the provided public key file. A mismatch means the auditor
-// is holding the wrong key for this receipt — the signature check would fail
-// with a confusing message, so we surface the root cause first.
+// KeyAuthority compares the receipt's signing_key_id against the key_id
+// declared in the provided public key file. A mismatch means the auditor is
+// holding the wrong key for this receipt — surface the root cause before
+// spending cycles on crypto.
 //
-// A receipt with an empty provided key ID (the key file has no # key_id:
-// comment) passes this check; the caller is responsible for out-of-band key
-// confirmation in that case.
-func KeyAuthority(r *dsr.Receipt, provided *PublicKeyWithID) *KeyAuthorityResult {
-	res := &KeyAuthorityResult{
-		ClaimedKeyID:  r.SigningKeyID,
-		ProvidedKeyID: provided.KeyID,
+// sha256-legacy receipts do not use a public key; KeyAuthority is a no-op
+// (returns Valid=true, Skipped=true) for those receipts.
+func KeyAuthority(e *dsr.Envelope, provided *PublicKeyWithID) *KeyAuthorityResult {
+	if e.SigAlgo() == dsr.AlgoSHA256Legacy {
+		return &KeyAuthorityResult{Valid: true, Skipped: true}
 	}
 
-	if provided.KeyID != "" && r.SigningKeyID != provided.KeyID {
+	claimedID := ""
+	if e.SigningKeyID != nil {
+		claimedID = *e.SigningKeyID
+	}
+
+	res := &KeyAuthorityResult{
+		ClaimedKeyID: claimedID,
+	}
+	if provided != nil {
+		res.ProvidedKeyID = provided.KeyID
+	}
+
+	if provided != nil && provided.KeyID != "" && claimedID != "" && claimedID != provided.KeyID {
 		res.Valid = false
 		res.Err = dsrerrors.New(
 			dsrerrors.KeyAuthorityMismatch,
 			fmt.Sprintf(
-				"The receipt claims it was signed by key %q, but the public key file identifies as %q. "+
-					"You are likely using the wrong public key for this receipt. "+
-					"Request the correct public key from the customer who issued this receipt.",
-				r.SigningKeyID, provided.KeyID,
+				"The receipt claims it was signed by key %q, but the provided public key "+
+					"identifies as %q. You are likely using the wrong public key for this receipt.",
+				claimedID, provided.KeyID,
 			),
-			fmt.Sprintf(
-				"receipt.signing_key_id=%q, key_file.key_id=%q",
-				r.SigningKeyID, provided.KeyID,
-			),
+			fmt.Sprintf("receipt.signing_key_id=%q, key_file.key_id=%q", claimedID, provided.KeyID),
 		)
 		return res
 	}
@@ -79,155 +83,170 @@ func KeyAuthority(r *dsr.Receipt, provided *PublicKeyWithID) *KeyAuthorityResult
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. Signature verification
+// 2. Signature
 // ─────────────────────────────────────────────────────────────────────────────
 
 // SignatureResult is returned by Signature.
 type SignatureResult struct {
 	Valid           bool
 	Algorithm       string
-	KeyID           string
-	PublicKeyDigest string // sha256:<hex prefix> of the public key bytes
-	SignatureHex    string // first 8 and last 8 hex chars of the 64-byte sig
+	CanonicalLen    int
+	PublicKeyDigest string // sha256:<16-hex-char prefix>
 	Err             *dsrerrors.VerificationError
 }
 
-// Signature verifies the signature on r using the provided public key.
+// Signature verifies the receipt's signature using the provided public key.
 //
-// The signed payload is the canonical representation of the receipt's envelope
-// fields (id, version, type, vault_id, issued_at, content_hash, signing_key_id,
-// signing_algorithm) — see dsr.CanonicalSignedPayload for the exact construction.
-// This binds all identity fields and the content hash to the signature, so that
-// any modification to any of those fields is detected here.
-//
-// Dispatch by signing_algorithm:
-//   - "ed25519"       → ed25519.Verify over the raw canonical payload bytes
-//   - "rsa-pss-sha256" → rsa.VerifyPSS with SHA-256 digest, PSSSaltLengthAuto
-//   - "ecdsa-sha256"  → ecdsa.VerifyASN1 with SHA-256 digest (DER-encoded sig)
-func Signature(r *dsr.Receipt, provided *PublicKeyWithID) *SignatureResult {
-	// Compute the public key's fingerprint for the output (not for security).
-	// Serialize the key deterministically for fingerprinting.
-	var keyBytes []byte
-	switch k := provided.Key.(type) {
-	case ed25519.PublicKey:
-		keyBytes = []byte(k)
-	case *rsa.PublicKey:
-		der, _ := x509MarshalPKIX(k)
-		keyBytes = der
-	case *ecdsa.PublicKey:
-		der, _ := x509MarshalPKIX(k)
-		keyBytes = der
-	}
-	sum := sha256.Sum256(keyBytes)
-	keyDigest := fmt.Sprintf("sha256:%s", hex.EncodeToString(sum[:])[:16])
+// Algorithm dispatch:
+//   - sha256-legacy   → SHA-256(canonical) == signature_hex  (constant-time)
+//   - ed25519-v1      → ed25519.Verify over raw canonical bytes (no pre-hash)
+//   - rsa-pss-sha256  → rsa.VerifyPSS, SHA-256 digest, PSSSaltLengthAuto
+//   - ecdsa-sha256    → ecdsa.VerifyASN1, SHA-256 digest (DER-encoded sig)
+func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
+	algo := e.SigAlgo()
+	res := &SignatureResult{Algorithm: algo}
 
-	sigHex := hex.EncodeToString(r.Signature)
-	var sigDisplay string
-	if len(sigHex) >= 16 {
-		sigDisplay = sigHex[:8] + "..." + sigHex[len(sigHex)-8:]
-	} else {
-		sigDisplay = sigHex
-	}
-
-	res := &SignatureResult{
-		Algorithm:       r.SigningAlgorithm,
-		KeyID:           r.SigningKeyID,
-		PublicKeyDigest: keyDigest,
-		SignatureHex:    sigDisplay,
-	}
-
-	// Canonical-form dispatch: RV receipt types use the 10-field RV payload
-	// (matching rv-receipt-canonical.ts); all other types use the 8-field
-	// standard envelope payload. This dispatch is independent of algorithm
-	// dispatch (P26 BYOK): both apply to the same receipt.
-	var payload []byte
-	var payloadErr error
-	switch r.Type {
-	case dsr.TypeRV, dsr.TypeRVi, dsr.TypeRVf:
-		payload, payloadErr = dsr.CanonicalRvSignedPayload(r)
-	default:
-		payload, payloadErr = dsr.CanonicalSignedPayload(r)
-	}
-	if payloadErr != nil {
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
 		res.Valid = false
 		res.Err = dsrerrors.New(
 			dsrerrors.SignatureInvalid,
 			"The verifier could not construct the canonical signed payload for this receipt. "+
-				"The receipt may have malformed envelope fields.",
-			fmt.Sprintf("canonical payload error: %s", payloadErr.Error()),
+				"The receipt may be missing required type-specific fields.",
+			fmt.Sprintf("CanonicalPayload error: %s", err.Error()),
 		)
 		return res
 	}
+	res.CanonicalLen = len(canonical)
+	canonicalBytes := []byte(canonical)
 
-	var verified bool
-	switch r.SigningAlgorithm {
-	case dsr.SigningAlgorithmED25519:
+	switch algo {
+	case dsr.AlgoSHA256Legacy:
+		return verifySHA256Legacy(e, canonicalBytes, res)
+
+	case dsr.AlgoED25519V1:
+		if provided == nil {
+			res.Valid = false
+			res.Err = dsrerrors.New(
+				dsrerrors.SignatureInvalid,
+				"The receipt uses algorithm \"ed25519-v1\" but no public key was provided. "+
+					"Pass the managed public key with --public-key.",
+				"provided key is nil for ed25519-v1 receipt",
+			)
+			return res
+		}
 		pub, ok := provided.Key.(ed25519.PublicKey)
 		if !ok {
 			res.Valid = false
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
-				"The receipt declares algorithm \"ed25519\" but the provided public key is not an ed25519 key.",
+				"The receipt uses algorithm \"ed25519-v1\" but the provided key is not an Ed25519 key.",
 				fmt.Sprintf("key type: %T, expected: ed25519.PublicKey", provided.Key),
 			)
 			return res
 		}
-		// ed25519 verifies over the raw message (not pre-hashed).
-		verified = ed25519.Verify(pub, payload, r.Signature)
+		res.PublicKeyDigest = keyDigest([]byte(pub))
+		sigBytes, decErr := base64.StdEncoding.DecodeString(e.Signature)
+		if decErr != nil {
+			res.Valid = false
+			res.Err = dsrerrors.New(
+				dsrerrors.SignatureInvalid,
+				"The receipt's signature field is not valid base64.",
+				fmt.Sprintf("base64 decode error: %s", decErr.Error()),
+			)
+			return res
+		}
+		if !ed25519.Verify(pub, canonicalBytes, sigBytes) {
+			res.Valid = false
+			res.Err = signatureFailedErr(algo, e.SigningKeyID)
+			return res
+		}
 
-	case dsr.SigningAlgorithmRSAPSS:
+	case dsr.AlgoRSAPSSSHA256:
+		if provided == nil {
+			res.Valid = false
+			res.Err = dsrerrors.New(
+				dsrerrors.SignatureInvalid,
+				"The receipt uses algorithm \"rsa-pss-sha256\" but no BYOK public key was provided. "+
+					"Pass the customer RSA key with --byok-key.",
+				"provided key is nil for rsa-pss-sha256 receipt",
+			)
+			return res
+		}
 		pub, ok := provided.Key.(*rsa.PublicKey)
 		if !ok {
 			res.Valid = false
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
-				"The receipt declares algorithm \"rsa-pss-sha256\" but the provided public key is not an RSA key.",
+				"The receipt uses algorithm \"rsa-pss-sha256\" but the provided key is not an RSA key.",
 				fmt.Sprintf("key type: %T, expected: *rsa.PublicKey", provided.Key),
 			)
 			return res
 		}
-		verified = verifyRSAPSS(pub, payload, r.Signature)
+		der, _ := marshalPKIX(pub)
+		res.PublicKeyDigest = keyDigest(der)
+		sigBytes, decErr := base64.StdEncoding.DecodeString(e.Signature)
+		if decErr != nil {
+			res.Valid = false
+			res.Err = dsrerrors.New(
+				dsrerrors.SignatureInvalid,
+				"The receipt's signature field is not valid base64.",
+				fmt.Sprintf("base64 decode error: %s", decErr.Error()),
+			)
+			return res
+		}
+		if !verifyRSAPSS(pub, canonicalBytes, sigBytes) {
+			res.Valid = false
+			res.Err = signatureFailedErr(algo, e.SigningKeyID)
+			return res
+		}
 
-	case dsr.SigningAlgorithmECDSA:
+	case dsr.AlgoECDSASHA256:
+		if provided == nil {
+			res.Valid = false
+			res.Err = dsrerrors.New(
+				dsrerrors.SignatureInvalid,
+				"The receipt uses algorithm \"ecdsa-sha256\" but no BYOK public key was provided. "+
+					"Pass the customer ECDSA key with --byok-key.",
+				"provided key is nil for ecdsa-sha256 receipt",
+			)
+			return res
+		}
 		pub, ok := provided.Key.(*ecdsa.PublicKey)
 		if !ok {
 			res.Valid = false
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
-				"The receipt declares algorithm \"ecdsa-sha256\" but the provided public key is not an ECDSA key.",
+				"The receipt uses algorithm \"ecdsa-sha256\" but the provided key is not an ECDSA key.",
 				fmt.Sprintf("key type: %T, expected: *ecdsa.PublicKey", provided.Key),
 			)
 			return res
 		}
-		verified = verifyECDSA(pub, payload, r.Signature)
+		der, _ := marshalPKIX(pub)
+		res.PublicKeyDigest = keyDigest(der)
+		sigBytes, decErr := base64.StdEncoding.DecodeString(e.Signature)
+		if decErr != nil {
+			res.Valid = false
+			res.Err = dsrerrors.New(
+				dsrerrors.SignatureInvalid,
+				"The receipt's signature field is not valid base64.",
+				fmt.Sprintf("base64 decode error: %s", decErr.Error()),
+			)
+			return res
+		}
+		hashed := sha256.Sum256(canonicalBytes)
+		if !ecdsa.VerifyASN1(pub, hashed[:], sigBytes) {
+			res.Valid = false
+			res.Err = signatureFailedErr(algo, e.SigningKeyID)
+			return res
+		}
 
 	default:
 		res.Valid = false
 		res.Err = dsrerrors.New(
-			dsrerrors.SignatureInvalid,
-			fmt.Sprintf("The receipt declares unsupported signing algorithm %q.", r.SigningAlgorithm),
-			fmt.Sprintf("signing_algorithm: %q", r.SigningAlgorithm),
-		)
-		return res
-	}
-
-	if !verified {
-		res.Valid = false
-		res.Err = dsrerrors.New(
-			dsrerrors.SignatureInvalid,
-			fmt.Sprintf(
-				"The %s signature on this receipt does not verify against key %q. "+
-					"This means either: (1) the receipt was not signed by this key, "+
-					"(2) the receipt's envelope fields (id, version, type, vault_id, "+
-					"issued_at, content_hash) were modified after signing, or "+
-					"(3) the signature bytes are corrupt. "+
-					"Do not treat this receipt as evidence without resolving this failure.",
-				r.SigningAlgorithm, r.SigningKeyID,
-			),
-			fmt.Sprintf(
-				"verify returned false; algorithm=%s, key_id=%s, payload_len=%d",
-				r.SigningAlgorithm, r.SigningKeyID, len(payload),
-			),
+			dsrerrors.UnsupportedAlgorithm,
+			fmt.Sprintf("Algorithm %q is not supported by this verifier.", algo),
+			fmt.Sprintf("signature_algorithm: %q", algo),
 		)
 		return res
 	}
@@ -236,215 +255,145 @@ func Signature(r *dsr.Receipt, provided *PublicKeyWithID) *SignatureResult {
 	return res
 }
 
-// verifyRSAPSS verifies an RSA-PSS SHA-256 signature over canonicalBytes.
-// AWS KMS RSASSA_PSS_SHA_256 uses PSSSaltLengthAuto-compatible salt lengths.
+func verifySHA256Legacy(e *dsr.Envelope, canonicalBytes []byte, res *SignatureResult) *SignatureResult {
+	// sha256-legacy: signature IS SHA-256_hex(canonical_payload_bytes).
+	// Constant-time comparison to prevent timing oracle attacks.
+	sum := sha256.Sum256(canonicalBytes)
+	computed := hex.EncodeToString(sum[:])
+
+	storedBytes, err := hex.DecodeString(e.Signature)
+	if err != nil {
+		res.Valid = false
+		res.Err = dsrerrors.New(
+			dsrerrors.SignatureInvalid,
+			"The receipt's signature field is not valid hex (expected for sha256-legacy).",
+			fmt.Sprintf("hex decode error: %s", err.Error()),
+		)
+		return res
+	}
+
+	if subtle.ConstantTimeCompare(sum[:], storedBytes) != 1 {
+		res.Valid = false
+		res.Err = dsrerrors.New(
+			dsrerrors.SignatureInvalid,
+			fmt.Sprintf(
+				"The SHA-256 hash of the canonical payload does not match the stored signature. "+
+					"Computed: %s  Stored: %s",
+				computed, e.Signature,
+			),
+			fmt.Sprintf("algorithm=sha256-legacy, computed=%s, stored=%s", computed, e.Signature),
+		)
+		return res
+	}
+
+	res.Valid = true
+	return res
+}
+
+// verifyRSAPSS verifies an RSA-PSS SHA-256 signature.
+// PSSSaltLengthAuto matches AWS KMS RSASSA_PSS_SHA_256 and Node.js padding:4 behavior.
 func verifyRSAPSS(pub *rsa.PublicKey, canonicalBytes, sig []byte) bool {
 	hashed := sha256.Sum256(canonicalBytes)
 	opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA256}
 	return rsa.VerifyPSS(pub, crypto.SHA256, hashed[:], sig, opts) == nil
 }
 
-// verifyECDSA verifies an ECDSA SHA-256 signature over canonicalBytes.
-// AWS KMS ECDSA_SHA_256 produces ASN.1/DER-encoded signatures; VerifyASN1
-// handles that encoding directly.
-func verifyECDSA(pub *ecdsa.PublicKey, canonicalBytes, sig []byte) bool {
-	hashed := sha256.Sum256(canonicalBytes)
-	return ecdsa.VerifyASN1(pub, hashed[:], sig)
+func signatureFailedErr(algo string, keyID *string) *dsrerrors.VerificationError {
+	kid := ""
+	if keyID != nil {
+		kid = *keyID
+	}
+	return dsrerrors.New(
+		dsrerrors.SignatureInvalid,
+		fmt.Sprintf(
+			"The %s signature on this receipt does not verify. "+
+				"This means: (1) the receipt was not signed by this key, "+
+				"(2) the signed fields were modified after issuance, or "+
+				"(3) the signature bytes are corrupt. "+
+				"Do not treat this receipt as audit evidence without resolving this failure.",
+			algo,
+		),
+		fmt.Sprintf("algorithm=%s key_id=%q verify=false", algo, kid),
+	)
 }
 
-// x509MarshalPKIX is a local alias to avoid a direct x509 import at the top of
-// this file conflicting with the x509 import in key.go (same package is fine,
-// but named to make intent clear).
-func x509MarshalPKIX(pub interface{}) ([]byte, error) {
-	return marshalPKIX(pub)
+func keyDigest(keyBytes []byte) string {
+	sum := sha256.Sum256(keyBytes)
+	return fmt.Sprintf("sha256:%s", hex.EncodeToString(sum[:])[:16])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. Content hash verification
+// 3. Chain hash (bundle-internal consistency)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ContentHashResult is returned by ContentHash.
-type ContentHashResult struct {
-	Valid        bool
-	Algorithm    string
-	ComputedHash string
-	StoredHash   string
-	Err          *dsrerrors.VerificationError
+// ChainHashResult is returned by VerifyChainHash.
+type ChainHashResult struct {
+	Valid    bool
+	Checked  int // number of consecutive pairs verified
+	Skipped  bool
+	Err      *dsrerrors.VerificationError
 }
 
-// ContentHash recomputes the SHA-256 of the canonical content bytes and
-// compares the result to the receipt's content_hash field using a
-// constant-time comparison.
+// VerifyChainHash checks that each receipt's prior_hash equals
+// ChainHash(prev.prior_hash, canonical(prev)) for every consecutive pair in
+// receipts. The receipts must be ordered oldest-first.
 //
-// A mismatch with a valid signature (check #2 passed) means the content was
-// modified after the receipt was signed — the signature covered the original
-// content_hash, not the current content.
-func ContentHash(r *dsr.Receipt) *ContentHashResult {
-	res := &ContentHashResult{
-		Algorithm:  "sha256",
-		StoredHash: r.ContentHash,
-	}
-
-	canonical, err := dsr.CanonicalContent(r.Content)
-	if err != nil {
-		res.Valid = false
-		res.Err = dsrerrors.New(
-			dsrerrors.ContentHashMismatch,
-			"The receipt's content field could not be canonicalized for hash verification. "+
-				"The content field may contain invalid JSON.",
-			fmt.Sprintf("CanonicalContent error: %s", err.Error()),
-		)
-		return res
-	}
-
-	sum := sha256.Sum256(canonical)
-	computed := hex.EncodeToString(sum[:])
-	res.ComputedHash = computed
-
-	storedBytes, decErr := hex.DecodeString(r.ContentHash)
-	if decErr != nil {
-		res.Valid = false
-		res.Err = dsrerrors.New(
-			dsrerrors.ContentHashMismatch,
-			"The receipt's content_hash field is not a valid hex string and cannot be compared. "+
-				"The field may be corrupt.",
-			fmt.Sprintf("hex.DecodeString error: %s", decErr.Error()),
-		)
-		return res
-	}
-
-	computedBytes := sum[:]
-	// constant-time comparison to prevent timing side-channels.
-	if subtle.ConstantTimeCompare(computedBytes, storedBytes) != 1 {
-		res.Valid = false
-		res.Err = dsrerrors.New(
-			dsrerrors.ContentHashMismatch,
-			"The hash of the receipt's current content does not match the content_hash field "+
-				"that was included in the signed payload. "+
-				"This means the content of the receipt was modified after the receipt was signed. "+
-				"The signature may still be valid for the original content — if so, the receipt was "+
-				"authentic at issuance but has been tampered with since. "+
-				"Do not accept this receipt as audit evidence in its current form.",
-			fmt.Sprintf(
-				"algorithm=sha256, computed=%s, stored=%s",
-				computed, r.ContentHash,
-			),
-		)
-		return res
-	}
-
-	res.Valid = true
-	return res
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 4. Causal artifact structural validation
-// ─────────────────────────────────────────────────────────────────────────────
-
-// CausalRefsResult is returned by CausalRefs.
-type CausalRefsResult struct {
-	Valid           bool
-	MalformedFields []string
-	PRURL           string
-	CommitSHA       string
-	MergedAt        string
-	Err             *dsrerrors.VerificationError
-}
-
-// prURLPattern matches GitHub PR URLs in the forms:
-//   - github.com/org/repo#1234
-//   - https://github.com/org/repo#1234
-//   - http://github.com/org/repo#1234
-var prURLPattern = regexp.MustCompile(
-	`^(https?://)?github\.com/[a-zA-Z0-9_.\-]+/[a-zA-Z0-9_.\-]+#[0-9]+$`,
-)
-
-// commitSHAPattern matches abbreviated or full git commit SHAs (7–64 hex chars).
-var commitSHAPattern = regexp.MustCompile(`^[0-9a-fA-F]{7,64}$`)
-
-// CausalRefs validates the structural integrity of causal artifact references
-// in R1, R1-L, and R1-N receipts. For other receipt types the result is always
-// Valid=true with a note that no causal refs are expected.
+// This proves bundle-internal consistency: these receipts form an unbroken
+// signed chain. It does NOT prove completeness — receipts outside the bundle
+// may exist between any two entries.
 //
-// This check is STRUCTURAL ONLY — no network calls are made, and no attempt
-// is made to fetch or verify the referenced PR or commit.
-func CausalRefs(r *dsr.Receipt) *CausalRefsResult {
-	res := &CausalRefsResult{Valid: true}
-
-	switch r.Type {
-	case dsr.TypeR1, dsr.TypeR1L, dsr.TypeR1N:
-		// fall through to validation below
-	default:
-		// R2, RV, RV-i, RV-f do not carry causal PR/commit references.
-		return res
+// Returns Skipped=true when len(receipts) < 2 (nothing to check).
+func VerifyChainHash(receipts []*dsr.Envelope) *ChainHashResult {
+	if len(receipts) < 2 {
+		return &ChainHashResult{Valid: true, Skipped: true}
 	}
 
-	var content dsr.R1Content
-	if err := jsonUnmarshal(r.Content, &content); err != nil {
-		res.Valid = false
-		res.MalformedFields = []string{"content"}
-		res.Err = dsrerrors.New(
-			dsrerrors.MalformedCausalRef,
-			"The receipt's content field could not be parsed as an R1 content object. "+
-				"Fields pr_url, commit_sha, and merged_at could not be extracted for validation.",
-			fmt.Sprintf("json.Unmarshal error: %s", err.Error()),
-		)
-		return res
-	}
+	for i := 1; i < len(receipts); i++ {
+		prev := receipts[i-1]
+		curr := receipts[i]
 
-	res.PRURL = content.PRURL
-	res.CommitSHA = content.CommitSHA
-	res.MergedAt = content.MergedAt
+		if curr.PriorHash == nil {
+			// Receipt declares no prior_hash — chain is not asserted, skip this pair.
+			continue
+		}
 
-	var malformed []string
+		prevCanonical, err := dsr.CanonicalPayload(prev)
+		if err != nil {
+			return &ChainHashResult{
+				Valid: false,
+				Err: dsrerrors.New(
+					dsrerrors.HashChainBroken,
+					fmt.Sprintf(
+						"Could not compute canonical payload for receipt %q (position %d) "+
+							"to verify the chain hash of receipt %q.",
+						prev.ReceiptID, i-1, curr.ReceiptID,
+					),
+					fmt.Sprintf("CanonicalPayload error for receipt[%d]: %s", i-1, err.Error()),
+				),
+			}
+		}
 
-	if content.PRURL == "" {
-		malformed = append(malformed, "pr_url (missing)")
-	} else if !prURLPattern.MatchString(content.PRURL) {
-		malformed = append(malformed, fmt.Sprintf(
-			"pr_url (value %q does not match expected GitHub PR URL format, e.g. github.com/org/repo#1234)",
-			content.PRURL,
-		))
-	}
-
-	if content.CommitSHA == "" {
-		malformed = append(malformed, "commit_sha (missing)")
-	} else if !commitSHAPattern.MatchString(content.CommitSHA) {
-		malformed = append(malformed, fmt.Sprintf(
-			"commit_sha (value %q is not a valid git SHA: must be 7–64 hexadecimal characters)",
-			content.CommitSHA,
-		))
-	}
-
-	if content.MergedAt != "" {
-		if _, err := time.Parse(time.RFC3339, content.MergedAt); err != nil {
-			malformed = append(malformed, fmt.Sprintf(
-				"merged_at (value %q is not a valid RFC3339 timestamp)",
-				content.MergedAt,
-			))
+		expected := dsr.ChainHash(prev.PriorHash, prevCanonical)
+		if *curr.PriorHash != expected {
+			return &ChainHashResult{
+				Valid: false,
+				Err: dsrerrors.New(
+					dsrerrors.HashChainBroken,
+					fmt.Sprintf(
+						"Receipt %q (position %d) has prior_hash %q but the computed hash of "+
+							"the previous receipt %q is %q. "+
+							"The receipts do not form a consistent signed chain — one may have been "+
+							"substituted or the bundle is missing entries between these positions.",
+						curr.ReceiptID, i, *curr.PriorHash, prev.ReceiptID, expected,
+					),
+					fmt.Sprintf(
+						"curr=%q position=%d prior_hash=%q computed=%q prev=%q",
+						curr.ReceiptID, i, *curr.PriorHash, expected, prev.ReceiptID,
+					),
+				),
+			}
 		}
 	}
 
-	if len(malformed) > 0 {
-		res.Valid = false
-		res.MalformedFields = malformed
-		res.Err = dsrerrors.New(
-			dsrerrors.MalformedCausalRef,
-			fmt.Sprintf(
-				"The receipt's causal artifact references contain %d malformed field(s). "+
-					"Note: this check validates format only — no network calls were made to verify "+
-					"the referenced PR or commit actually exists.",
-				len(malformed),
-			),
-			fmt.Sprintf("malformed fields: %v", malformed),
-		)
-	}
-
-	return res
-}
-
-// jsonUnmarshal is a package-local alias to avoid a direct encoding/json import
-// conflict with the json used in dsr. It's identical to json.Unmarshal.
-func jsonUnmarshal(data []byte, v interface{}) error {
-	return unmarshal(data, v)
+	return &ChainHashResult{Valid: true, Checked: len(receipts) - 1}
 }
