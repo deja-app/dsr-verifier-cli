@@ -1,148 +1,233 @@
 package dsr
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 )
 
-// CanonicalContent returns the canonical byte representation of a receipt's
-// content field. This is the input to SHA-256 when computing content_hash,
-// and the input to ed25519 when constructing the signed payload.
+// CanonicalPayload derives the canonical signing payload for e.
+// This is the exact byte sequence that was signed; it must match the issuer's
+// output or signature verification will fail.
 //
-// Canonical form: the content object re-serialized with lexicographically
-// sorted keys at every level, compact (no extra whitespace). Go's
-// encoding/json marshals map keys in sorted order as of Go 1.12, so
-// unmarshaling to interface{} and re-marshaling produces the canonical form.
-//
-// This definition must match the canonical serialization used by the Déjà
-// signing infrastructure. Both sides sort object keys lexicographically and
-// produce compact JSON with no trailing newline.
-func CanonicalContent(content json.RawMessage) ([]byte, error) {
-	if len(content) == 0 {
-		return nil, fmt.Errorf("content is empty")
+// Both canonical_form_version values ("v1-legacy" and "v2-jcs") produce
+// byte-identical output for our flat receipt payloads (string/int64/bool/null).
+// The distinction would only matter if future fields introduced nested objects
+// or float values with ECMA-262 vs strconv divergence.
+func CanonicalPayload(e *Envelope) (string, error) {
+	switch {
+	case IsAttributionType(e.Type):
+		return attributionCanonical(e)
+	case IsResolutionType(e.Type):
+		return resolutionCanonical(e)
+	default:
+		return otherCanonical(e)
 	}
-	var v interface{}
-	if err := json.Unmarshal(content, &v); err != nil {
-		return nil, fmt.Errorf("content is not valid JSON: %w", err)
-	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil, fmt.Errorf("failed to re-serialize content: %w", err)
-	}
-	return b, nil
 }
 
-// CanonicalRvSignedPayload returns the bytes that are covered by the signature
-// on an RV (verification run) receipt. The RV canonical form is a distinct
-// 10-field payload matching rv-receipt-canonical.ts on the server.
-//
-// Algorithm (v1-legacy, mirrors rv-receipt-canonical.ts):
-//  1. Map camelCase TypeScript fields to their snake_case wire names.
-//  2. Construct a Go struct with explicit json tags — encoding/json marshals
-//     struct fields in declaration order, which must be alphabetical by key
-//     to match the TypeScript Object.keys().sort() step.
-//  3. Return compact JSON.Marshal of the struct (no extra whitespace).
-//
-// Covered fields (JSON keys in Unicode code-point / alphabetical order):
-//
-//	checks_passed, issued_at, receipt_id, receipts_attested_count, rv_type,
-//	vault_id, verification_completed_at, verification_mode,
-//	verification_run_id, verification_started_at
-//
-// issued_at, verification_started_at, and verification_completed_at must be
-// ISO 8601 strings as stored on the receipt (no reformatting is applied).
-//
-// This function must produce byte-identical output to canonicaliseRvReceipt()
-// in rv-receipt-canonical.ts. The shared test vector at
-// docs/dsr/rv-canonical-vector.json pins both sides to the same bytes.
-func CanonicalRvSignedPayload(r *Receipt) ([]byte, error) {
-	// Struct field declaration order determines JSON key order in encoding/json.
-	// Fields are listed in strict Unicode code-point / alphabetical order so that
-	// the output matches the TypeScript sort (a < b ? -1 : a > b ? 1 : 0).
-	payload := struct {
-		ChecksPassed            []string `json:"checks_passed"`
-		IssuedAt                string   `json:"issued_at"`
-		ReceiptID               string   `json:"receipt_id"`
-		ReceiptsAttestedCount   int      `json:"receipts_attested_count"`
-		RvType                  string   `json:"rv_type"`
-		VaultID                 string   `json:"vault_id"`
-		VerificationCompletedAt string   `json:"verification_completed_at"`
-		VerificationMode        string   `json:"verification_mode"`
-		VerificationRunID       string   `json:"verification_run_id"`
-		VerificationStartedAt   string   `json:"verification_started_at"`
-	}{
-		ChecksPassed:            r.ChecksPassed,
-		IssuedAt:                r.RvIssuedAt(),
-		ReceiptID:               r.ID,
-		ReceiptsAttestedCount:   r.ReceiptsAttestedCount,
-		RvType:                  r.RvType,
-		VaultID:                 r.VaultID,
-		VerificationCompletedAt: r.VerificationCompletedAt,
-		VerificationMode:        r.VerificationMode,
-		VerificationRunID:       r.VerificationRunID,
-		VerificationStartedAt:   r.VerificationStartedAt,
+func attributionCanonical(e *Envelope) (string, error) {
+	if e.Repository == nil {
+		return "", fmt.Errorf("attribution receipt missing repository")
 	}
-	b, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to serialize RV signed payload: %w", err)
+	if e.PRNumber == nil {
+		return "", fmt.Errorf("attribution receipt missing pr_number")
 	}
-	return b, nil
+
+	// issued_at: use explicit field when present; fall back to timestamp.
+	// The TypeScript issuer uses `receipt.issuedAt ?? receipt.timestamp`.
+	var issuedAt string
+	if e.IssuedAt != nil {
+		issuedAt = *e.IssuedAt
+	} else {
+		issuedAt = e.Timestamp
+	}
+
+	m := map[string]any{
+		"ccs_score":     strDeref(e.CCSScore, "0.0000"),
+		"confidence":    strDeref(e.Confidence, ""),
+		"error_class":   anyNullableStr(e.ErrorClass),
+		"issued_at":     issuedAt,
+		"matched":       strDeref(e.Matched, "false"),
+		"missing_field": anyNullableStr(e.MissingField),
+		"pr_number":     *e.PRNumber,
+		"repository":    *e.Repository,
+		"service_zone":  strDeref(e.ServiceZone, ""),
+	}
+
+	// Conditional fields: include only when non-null in the envelope.
+	if e.ProducerGraphScore != nil {
+		m["producer_graph_score"] = *e.ProducerGraphScore
+	}
+	if e.SchemaStabilityScore != nil {
+		m["schema_stability_score"] = *e.SchemaStabilityScore
+	}
+	if e.IsSynthetic != nil {
+		m["is_synthetic"] = *e.IsSynthetic
+	}
+	if e.IsInternalValidation != nil {
+		m["is_internal_validation"] = *e.IsInternalValidation
+	}
+	if e.IsTrial != nil {
+		m["is_trial"] = *e.IsTrial
+	}
+	if e.SigningKeyID != nil {
+		m["signing_key_id"] = *e.SigningKeyID
+	}
+	// The canonical form field is "signing_algorithm"; its value comes from
+	// the envelope's "signature_algorithm" field (different name, same value).
+	if e.SignatureAlgorithm != nil {
+		m["signing_algorithm"] = *e.SignatureAlgorithm
+	}
+
+	return jcsSerialise(m)
 }
 
-// RvIssuedAt returns the issued_at string for use in the RV canonical payload.
-//
-// Priority:
-//  1. IssuedAtRaw — the verbatim string from the receipt JSON, preserving
-//     millisecond precision (e.g. "2026-01-01T00:04:24.000Z"). This is the
-//     byte-exact value used by canonicaliseRvReceipt() in rv-receipt-canonical.ts.
-//  2. Fallback: reformat from the parsed time.Time. This loses sub-second
-//     precision but is used for receipts constructed in tests without a raw string.
-func (r *Receipt) RvIssuedAt() string {
-	if r.IssuedAtRaw != "" {
-		return r.IssuedAtRaw
+func resolutionCanonical(e *Envelope) (string, error) {
+	if e.AttributionReceiptID == nil {
+		return "", fmt.Errorf("resolution receipt missing attribution_receipt_id")
 	}
-	// "2006-01-02T15:04:05.000Z07:00" produces millisecond-precision with UTC "Z" suffix.
-	return r.IssuedAt.UTC().Format("2006-01-02T15:04:05.000Z07:00")
+	if e.IncidentID == nil {
+		return "", fmt.Errorf("resolution receipt missing incident_id")
+	}
+	if e.ResolvedAt == nil {
+		return "", fmt.Errorf("resolution receipt missing resolved_at")
+	}
+	if e.GateEvaluatedAt == nil {
+		return "", fmt.Errorf("resolution receipt missing gate_evaluated_at")
+	}
+	if e.TimeToResolutionMs == nil {
+		return "", fmt.Errorf("resolution receipt missing time_to_resolution_ms")
+	}
+
+	m := map[string]any{
+		"attribution_receipt_id": *e.AttributionReceiptID,
+		"duration_gate_score":    strDeref(e.DurationGateScore, "0.0000"),
+		"feature_gate_score":     strDeref(e.FeatureGateScore, "0.0000"),
+		"file_gate_score":        strDeref(e.FileGateScore, "0.0000"),
+		"gate_evaluated_at":      *e.GateEvaluatedAt,
+		"gates_passed":           boolDeref(e.GatesPassed, false),
+		"incident_id":            *e.IncidentID,
+		"infra_gate_score":       strDeref(e.InfraGateScore, "0.0000"),
+		"issued_at":              e.Timestamp,
+		"rate_gate_score":        strDeref(e.RateGateScore, "0.0000"),
+		"resolved_at":            *e.ResolvedAt,
+		"service_zone":           strDeref(e.ServiceZone, ""),
+		"time_to_resolution_ms":  *e.TimeToResolutionMs,
+		"vault_id":               e.VaultID,
+	}
+
+	if e.DSRFixCode != nil {
+		m["dsr_fix_code"] = *e.DSRFixCode
+	}
+	if e.SigningKeyID != nil {
+		m["signing_key_id"] = *e.SigningKeyID
+	}
+	if e.SignatureAlgorithm != nil {
+		m["signing_algorithm"] = *e.SignatureAlgorithm
+	}
+
+	return jcsSerialise(m)
 }
 
-// CanonicalSignedPayload returns the bytes that are covered by the ed25519
-// signature. The signed payload binds together the receipt's identity fields
-// and its content_hash, so that any modification to id, version, type,
-// vault_id, issued_at, or content causes signature verification to fail.
-//
-// Construction: sorted-key JSON of the six covered fields, compact.
-//
-// Covered fields (JSON keys in sort order):
-//
-//	content_hash, id, issued_at, signing_algorithm, signing_key_id, type,
-//	vault_id, version
-//
-// issued_at is serialized as an RFC3339 UTC timestamp ("Z" suffix).
-func CanonicalSignedPayload(r *Receipt) ([]byte, error) {
-	// Construct only the covered fields. Use a struct with explicit JSON tags
-	// so the key names are stable regardless of field order in the source.
-	payload := struct {
-		ContentHash      string `json:"content_hash"`
-		ID               string `json:"id"`
-		IssuedAt         string `json:"issued_at"`
-		SigningAlgorithm  string `json:"signing_algorithm"`
-		SigningKeyID     string `json:"signing_key_id"`
-		Type             string `json:"type"`
-		VaultID          string `json:"vault_id"`
-		Version          string `json:"version"`
-	}{
-		ContentHash:      r.ContentHash,
-		ID:               r.ID,
-		IssuedAt:         r.IssuedAt.UTC().Format("2006-01-02T15:04:05Z"),
-		SigningAlgorithm:  r.SigningAlgorithm,
-		SigningKeyID:     r.SigningKeyID,
-		Type:             r.Type,
-		VaultID:          r.VaultID,
-		Version:          r.Version,
+func otherCanonical(e *Envelope) (string, error) {
+	m := map[string]any{
+		"actor":      e.Actor,
+		"receipt_id": e.ReceiptID,
+		"timestamp":  e.Timestamp,
+		"type":       e.Type,
+		"vault_id":   e.VaultID,
+		"version":    e.DSRVersion,
 	}
-	b, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to serialize signed payload: %w", err)
+	return jcsSerialise(m)
+}
+
+// jcsSerialise produces a compact JSON string for a flat map following RFC 8785
+// (JCS) for the value types present in DSR receipt canonical forms:
+//
+//   - string → ECMA-262 JSON string escaping via encoding/json
+//   - int64  → strconv.FormatInt (never float64 — no ECMA-262 divergence risk)
+//   - bool   → "true" / "false"
+//   - nil    → "null"
+//
+// Keys are sorted by raw Unicode code-point order. For the ASCII field names used
+// in receipt payloads, this is identical to lexicographic byte order.
+// This matches both the TypeScript v1-legacy (Object.keys().sort() + JSON.stringify)
+// and v2-jcs (RFC 8785) implementations for flat string/int/bool/null payloads.
+func jcsSerialise(m map[string]any) (string, error) {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
 	}
-	return b, nil
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+
+	var sb strings.Builder
+	sb.WriteByte('{')
+	for i, k := range keys {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		kb, _ := json.Marshal(k)
+		sb.Write(kb)
+		sb.WriteByte(':')
+
+		switch val := m[k].(type) {
+		case nil:
+			sb.WriteString("null")
+		case bool:
+			if val {
+				sb.WriteString("true")
+			} else {
+				sb.WriteString("false")
+			}
+		case int64:
+			sb.WriteString(strconv.FormatInt(val, 10))
+		case string:
+			vb, _ := json.Marshal(val)
+			sb.Write(vb)
+		default:
+			return "", fmt.Errorf("canonical: unsupported value type %T for key %q", m[k], k)
+		}
+	}
+	sb.WriteByte('}')
+	return sb.String(), nil
+}
+
+// ChainHash computes H(n) = SHA-256_hex(UTF8(priorHash) ++ UTF8(canonicalPayload))
+// where priorHash is "" for the genesis receipt (prior_hash absent or null).
+// The result is the 64-character lowercase hex string stored as the next
+// receipt's prior_hash field.
+func ChainHash(priorHash *string, canonicalPayload string) string {
+	prev := ""
+	if priorHash != nil {
+		prev = *priorHash
+	}
+	input := append([]byte(prev), []byte(canonicalPayload)...)
+	h := sha256.Sum256(input)
+	return hexEncode(h[:])
+}
+
+// helpers
+
+func strDeref(p *string, def string) string {
+	if p == nil {
+		return def
+	}
+	return *p
+}
+
+func anyNullableStr(p *string) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
+func boolDeref(p *bool, def bool) bool {
+	if p == nil {
+		return def
+	}
+	return *p
 }

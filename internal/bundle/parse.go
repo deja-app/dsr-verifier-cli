@@ -13,15 +13,15 @@ import (
 
 // Bundle holds the fully-parsed contents of a .dsr.bundle file.
 type Bundle struct {
-	Manifest *Manifest
-	Receipts []*ParsedReceipt // parallel to Manifest.Entries; nil if parse failed
+	Manifest  *Manifest
+	Receipts  []*ParsedReceipt // parallel to Manifest.Entries; nil if parse failed
 	SizeBytes int64
 }
 
 // ParsedReceipt pairs a manifest entry with its parsed receipt (or a parse error).
 type ParsedReceipt struct {
-	Entry   ManifestEntry
-	Receipt *dsr.Receipt            // nil if ParseErr is set
+	Entry    ManifestEntry
+	Receipt  *dsr.Envelope              // nil if ParseErr is set
 	ParseErr *dsrerrors.VerificationError
 }
 
@@ -61,13 +61,11 @@ func ParseBundleFromBytes(data []byte) (*Bundle, *dsrerrors.VerificationError) {
 }
 
 func parseBundleFromZip(zr *zip.Reader, sizeBytes int64) (*Bundle, *dsrerrors.VerificationError) {
-	// Index files by name for fast lookup.
 	fileIndex := make(map[string]*zip.File, len(zr.File))
 	for _, f := range zr.File {
 		fileIndex[f.Name] = f
 	}
 
-	// Parse manifest.json.
 	manifestFile, ok := fileIndex["manifest.json"]
 	if !ok {
 		return nil, dsrerrors.New(
@@ -92,7 +90,6 @@ func parseBundleFromZip(zr *zip.Reader, sizeBytes int64) (*Bundle, *dsrerrors.Ve
 		return nil, verr
 	}
 
-	// Parse each receipt referenced in the manifest.
 	parsed := make([]*ParsedReceipt, len(manifest.Entries))
 	for i, entry := range manifest.Entries {
 		zf, found := fileIndex[entry.Filename]
@@ -133,7 +130,6 @@ func parseBundleFromZip(zr *zip.Reader, sizeBytes int64) (*Bundle, *dsrerrors.Ve
 	}, nil
 }
 
-// parseManifest parses and validates manifest.json bytes.
 func parseManifest(data []byte) (*Manifest, *dsrerrors.VerificationError) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
@@ -154,7 +150,6 @@ func parseManifest(data []byte) (*Manifest, *dsrerrors.VerificationError) {
 	return &m, nil
 }
 
-// validateManifest checks that all required manifest fields are present and valid.
 func validateManifest(m *Manifest) *dsrerrors.VerificationError {
 	var missing []string
 	if m.Format == "" {

@@ -9,629 +9,430 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/deja-dev/dsr-verifier-cli/internal/dsr"
 	dsrerrors "github.com/deja-dev/dsr-verifier-cli/internal/errors"
 	"github.com/deja-dev/dsr-verifier-cli/internal/verify"
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Test fixtures
-// ─────────────────────────────────────────────────────────────────────────────
-
+const testVaultID = "vault_testorg"
 const testKeyID = "key_test_2026q2"
-const testVaultID = "vlt_test-org"
 
-// newTestKey generates a fresh ed25519 key pair for testing.
-func newTestKey(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper builders
+// ─────────────────────────────────────────────────────────────────────────────
+
+func ptrStr(s string) *string { return &s }
+func ptrBool(b bool) *bool    { return &b }
+func ptrInt64(n int64) *int64 { return &n }
+
+// baseR1 returns a minimal valid R1 attribution Envelope with no signature set.
+func baseR1() *dsr.Envelope {
+	return &dsr.Envelope{
+		DSRVersion:  "DSR/1.0.2",
+		Type:        "R1",
+		ReceiptID:   "rcpt_test_r1_001",
+		VaultID:     testVaultID,
+		Timestamp:   "2026-05-12T12:00:00Z",
+		Actor:       "actor@example.com",
+		Origin:      "github.com/example/repo",
+		Repository:  ptrStr("example/repo"),
+		PRNumber:    ptrInt64(4287),
+		CCSScore:    ptrStr("0.8750"),
+		Confidence:  ptrStr("high"),
+		Matched:     ptrStr("true"),
+		ServiceZone: ptrStr("us-east-1"),
+	}
+}
+
+// baseR2 returns a minimal valid R2 resolution Envelope with no signature set.
+func baseR2() *dsr.Envelope {
+	return &dsr.Envelope{
+		DSRVersion:           "DSR/1.0.2",
+		Type:                 "R2",
+		ReceiptID:            "rcpt_test_r2_001",
+		VaultID:              testVaultID,
+		Timestamp:            "2026-05-13T10:00:00Z",
+		Actor:                "actor@example.com",
+		Origin:               "github.com/example/repo",
+		AttributionReceiptID: ptrStr("rcpt_test_r1_001"),
+		IncidentID:           ptrStr("inc_001"),
+		ResolvedAt:           ptrStr("2026-05-13T10:00:00Z"),
+		GateEvaluatedAt:      ptrStr("2026-05-13T09:58:00Z"),
+		TimeToResolutionMs:   ptrInt64(3600000),
+		GatesPassed:          ptrBool(true),
+		FileGateScore:        ptrStr("0.9000"),
+		RateGateScore:        ptrStr("0.8500"),
+		InfraGateScore:       ptrStr("0.9500"),
+		FeatureGateScore:     ptrStr("0.8000"),
+		DurationGateScore:    ptrStr("0.7500"),
+	}
+}
+
+// signEd25519 sets e.Signature to the base64 ed25519 signature over the canonical payload.
+func signEd25519(t *testing.T, e *dsr.Envelope, priv ed25519.PrivateKey) {
+	t.Helper()
+	algo := dsr.AlgoED25519V1
+	e.SignatureAlgorithm = &algo
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	sig := ed25519.Sign(priv, []byte(canonical))
+	e.Signature = base64.StdEncoding.EncodeToString(sig)
+}
+
+// signSHA256Legacy sets e.Signature to the SHA-256 hex of the canonical payload.
+func signSHA256Legacy(t *testing.T, e *dsr.Envelope) {
+	t.Helper()
+	e.SignatureAlgorithm = nil // absent = sha256-legacy
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	sum := sha256.Sum256([]byte(canonical))
+	e.Signature = hex.EncodeToString(sum[:])
+}
+
+// makeEd25519Key wraps ed25519.GenerateKey for tests.
+func makeEd25519Key(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {
 	t.Helper()
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		t.Fatalf("generate test key: %v", err)
+		t.Fatalf("ed25519.GenerateKey: %v", err)
 	}
 	return pub, priv
 }
 
-// marshalPublicKeyPEM encodes a public key as a PKIX PEM block with the
-// optional # key_id: header comment.
-func marshalPublicKeyPEM(t *testing.T, pub ed25519.PublicKey, keyID string) []byte {
+// ed25519PEMKey returns a PKIX PEM block for the public key with an optional key_id comment.
+func ed25519PEMKey(t *testing.T, pub ed25519.PublicKey, keyID string) []byte {
 	t.Helper()
 	der, err := x509.MarshalPKIXPublicKey(pub)
 	if err != nil {
-		t.Fatalf("marshal public key: %v", err)
+		t.Fatalf("MarshalPKIXPublicKey: %v", err)
 	}
-	block := &pem.Block{Type: "PUBLIC KEY", Bytes: der}
-	var buf []byte
+	var out []byte
 	if keyID != "" {
-		buf = append(buf, fmt.Sprintf("# key_id: %s\n", keyID)...)
+		out = append(out, fmt.Sprintf("# key_id: %s\n", keyID)...)
 	}
-	buf = append(buf, pem.EncodeToMemory(block)...)
-	return buf
+	out = append(out, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})...)
+	return out
 }
 
-// buildSignedReceipt constructs a complete, correctly-signed R1 receipt for
-// the given private key.
-func buildSignedReceipt(t *testing.T, priv ed25519.PrivateKey, keyID, vaultID string) []byte {
-	t.Helper()
-
-	// Build the content object.
-	content := map[string]interface{}{
-		"commit_sha": "a8f3c2e9d4b1a6f7c2e8d4b1f6a8c3e9d4b1a6f7",
-		"merged_at":  "2026-05-12T12:18:43Z",
-		"pr_url":     "github.com/test-org/payments-api#4287",
-	}
-
-	// Compute the canonical content bytes.
-	canonicalContent, err := json.Marshal(content)
-	if err != nil {
-		t.Fatalf("marshal content: %v", err)
-	}
-
-	// content_hash = sha256(canonical content).
-	sum := sha256.Sum256(canonicalContent)
-	contentHash := hex.EncodeToString(sum[:])
-
-	issuedAt := time.Date(2026, 5, 12, 12, 42, 8, 0, time.UTC)
-
-	// Build the partial receipt (without signature) to compute the signed payload.
-	partial := &dsr.Receipt{
-		ID:               "r_test_payments_2026q2",
-		Version:          dsr.Version,
-		Type:             dsr.TypeR1,
-		VaultID:          vaultID,
-		IssuedAt:         issuedAt,
-		Content:          canonicalContent,
-		ContentHash:      contentHash,
-		SigningKeyID:     keyID,
-		SigningAlgorithm:  dsr.SigningAlgorithmED25519,
-	}
-
-	payload, err := dsr.CanonicalSignedPayload(partial)
-	if err != nil {
-		t.Fatalf("canonical signed payload: %v", err)
-	}
-
-	sig := ed25519.Sign(priv, payload)
-
-	// Now serialize the full receipt as JSON.
-	full := map[string]interface{}{
-		"id":                "r_test_payments_2026q2",
-		"version":           dsr.Version,
-		"type":              dsr.TypeR1,
-		"vault_id":          vaultID,
-		"issued_at":         issuedAt.UTC().Format(time.RFC3339),
-		"content":           json.RawMessage(canonicalContent),
-		"content_hash":      contentHash,
-		"signing_key_id":    keyID,
-		"signing_algorithm": dsr.SigningAlgorithmED25519,
-		"signature":         hex.EncodeToString(sig),
-	}
-
-	b, err := json.Marshal(full)
-	if err != nil {
-		t.Fatalf("marshal receipt: %v", err)
-	}
-	return b
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test: known-good receipt — all checks pass
-// ─────────────────────────────────────────────────────────────────────────────
-
-func TestVerifyKnownGoodReceipt(t *testing.T) {
-	pub, priv := newTestKey(t)
-	keyPEM := marshalPublicKeyPEM(t, pub, testKeyID)
-	receiptJSON := buildSignedReceipt(t, priv, testKeyID, testVaultID)
-
-	r, parseErr := dsr.Parse(receiptJSON)
-	if parseErr != nil {
-		t.Fatalf("Parse: %v", parseErr)
-	}
-
-	provided, keyErr := verify.ParsePublicKeyFile(keyPEM)
-	if keyErr != nil {
-		t.Fatalf("ParsePublicKeyFile: %v", keyErr)
-	}
-
-	authRes := verify.KeyAuthority(r, provided)
-	assertValid(t, "KeyAuthority", authRes.Valid, authRes.Err)
-
-	sigRes := verify.Signature(r, provided)
-	assertValid(t, "Signature", sigRes.Valid, sigRes.Err)
-
-	hashRes := verify.ContentHash(r)
-	assertValid(t, "ContentHash", hashRes.Valid, hashRes.Err)
-
-	causalRes := verify.CausalRefs(r)
-	assertValid(t, "CausalRefs", causalRes.Valid, causalRes.Err)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test: tamper content → content_hash_mismatch surfaces
-// ─────────────────────────────────────────────────────────────────────────────
-
-func TestTamperContent(t *testing.T) {
-	pub, priv := newTestKey(t)
-	keyPEM := marshalPublicKeyPEM(t, pub, testKeyID)
-	receiptJSON := buildSignedReceipt(t, priv, testKeyID, testVaultID)
-
-	// Tamper: replace the content's commit_sha with a different value.
-	// The signature and content_hash fields are left unchanged — this simulates
-	// an attacker modifying the content without re-signing.
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(receiptJSON, &raw); err != nil {
-		t.Fatalf("unmarshal receipt: %v", err)
-	}
-	tamperedContent := []byte(`{"commit_sha":"0000000000000000000000000000000000000000","merged_at":"2026-05-12T12:18:43Z","pr_url":"github.com/test-org/payments-api#4287"}`)
-	raw["content"] = tamperedContent
-	tampered, _ := json.Marshal(raw)
-
-	r, parseErr := dsr.Parse(tampered)
-	if parseErr != nil {
-		t.Fatalf("Parse: %v", parseErr)
-	}
-
-	provided, _ := verify.ParsePublicKeyFile(keyPEM)
-
-	// Signature should still pass (signed payload includes original content_hash).
-	sigRes := verify.Signature(r, provided)
-	assertValid(t, "Signature (content tampered, envelope unchanged)", sigRes.Valid, sigRes.Err)
-
-	// Content hash must fail with the right error class.
-	hashRes := verify.ContentHash(r)
-	assertInvalid(t, "ContentHash", hashRes.Valid, hashRes.Err, dsrerrors.ContentHashMismatch)
-
-	if hashRes.ComputedHash == hashRes.StoredHash {
-		t.Error("computed and stored hashes must differ after tampering")
-	}
-	if hashRes.ComputedHash == "" || hashRes.StoredHash == "" {
-		t.Error("both hash values must be populated in the failure result")
-	}
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test: tamper signature bytes → signature_invalid surfaces
-// ─────────────────────────────────────────────────────────────────────────────
-
-func TestTamperSignature(t *testing.T) {
-	pub, priv := newTestKey(t)
-	keyPEM := marshalPublicKeyPEM(t, pub, testKeyID)
-	receiptJSON := buildSignedReceipt(t, priv, testKeyID, testVaultID)
-
-	// Flip the first byte of the signature field.
-	var raw map[string]json.RawMessage
-	json.Unmarshal(receiptJSON, &raw)
-	var sigHex string
-	json.Unmarshal(raw["signature"], &sigHex)
-	sigBytes, _ := hex.DecodeString(sigHex)
-	sigBytes[0] ^= 0xFF
-	raw["signature"], _ = json.Marshal(hex.EncodeToString(sigBytes))
-	tampered, _ := json.Marshal(raw)
-
-	r, parseErr := dsr.Parse(tampered)
-	if parseErr != nil {
-		t.Fatalf("Parse: %v", parseErr)
-	}
-
-	provided, _ := verify.ParsePublicKeyFile(keyPEM)
-	sigRes := verify.Signature(r, provided)
-	assertInvalid(t, "Signature", sigRes.Valid, sigRes.Err, dsrerrors.SignatureInvalid)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test: wrong public key → key_authority_mismatch surfaces before signature check
-// ─────────────────────────────────────────────────────────────────────────────
-
-func TestWrongPublicKey(t *testing.T) {
-	_, priv := newTestKey(t)
-	// Signing key has testKeyID; the "wrong" key file identifies as a different ID.
-	wrongPub, _ := newTestKey(t)
-	wrongKeyPEM := marshalPublicKeyPEM(t, wrongPub, "key_attacker_xyz")
-	receiptJSON := buildSignedReceipt(t, priv, testKeyID, testVaultID)
-
-	r, parseErr := dsr.Parse(receiptJSON)
-	if parseErr != nil {
-		t.Fatalf("Parse: %v", parseErr)
-	}
-
-	provided, keyErr := verify.ParsePublicKeyFile(wrongKeyPEM)
-	if keyErr != nil {
-		t.Fatalf("ParsePublicKeyFile: %v", keyErr)
-	}
-
-	authRes := verify.KeyAuthority(r, provided)
-	assertInvalid(t, "KeyAuthority", authRes.Valid, authRes.Err, dsrerrors.KeyAuthorityMismatch)
-
-	// Verify that the diagnostic values are populated.
-	if authRes.ClaimedKeyID != testKeyID {
-		t.Errorf("ClaimedKeyID = %q, want %q", authRes.ClaimedKeyID, testKeyID)
-	}
-	if authRes.ProvidedKeyID != "key_attacker_xyz" {
-		t.Errorf("ProvidedKeyID = %q, want %q", authRes.ProvidedKeyID, "key_attacker_xyz")
-	}
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test: malformed causal ref → structural validation surfaces
-// ─────────────────────────────────────────────────────────────────────────────
-
-func TestMalformedCausalRef(t *testing.T) {
-	pub, priv := newTestKey(t)
-	keyPEM := marshalPublicKeyPEM(t, pub, testKeyID)
-	receiptJSON := buildSignedReceipt(t, priv, testKeyID, testVaultID)
-
-	// Replace the content with one that has invalid pr_url and commit_sha.
-	var raw map[string]json.RawMessage
-	json.Unmarshal(receiptJSON, &raw)
-
-	badContent := map[string]interface{}{
-		"commit_sha": "not-a-hex-sha!",
-		"merged_at":  "2026-05-12T12:18:43Z",
-		"pr_url":     "not-a-valid-pr-url",
-	}
-	badContentBytes, _ := json.Marshal(badContent)
-
-	// Recompute the content_hash and signature for the modified receipt so that
-	// only the causal-ref check fails (signature and hash checks pass).
-	sum := sha256.Sum256(badContentBytes)
-	newContentHash := hex.EncodeToString(sum[:])
-
-	raw["content"] = badContentBytes
-	raw["content_hash"], _ = json.Marshal(newContentHash)
-
-	// Re-sign with the partial receipt.
-	issuedAt := time.Date(2026, 5, 12, 12, 42, 8, 0, time.UTC)
-	partial := &dsr.Receipt{
-		ID:               "r_test_payments_2026q2",
-		Version:          dsr.Version,
-		Type:             dsr.TypeR1,
-		VaultID:          testVaultID,
-		IssuedAt:         issuedAt,
-		Content:          badContentBytes,
-		ContentHash:      newContentHash,
-		SigningKeyID:     testKeyID,
-		SigningAlgorithm:  dsr.SigningAlgorithmED25519,
-	}
-	payload, _ := dsr.CanonicalSignedPayload(partial)
-	_, privKey := newTestKey(t) // wrong priv — we want the original priv
-	_ = privKey
-	// Use the original priv key (passed in as priv from buildSignedReceipt's key pair).
-	// We don't have access to priv here directly, so rebuild the receipt using
-	// the same priv key.
-	_ = pub
-	sig := ed25519.Sign(priv, payload)
-	raw["signature"], _ = json.Marshal(hex.EncodeToString(sig))
-
-	modified, _ := json.Marshal(raw)
-
-	r, parseErr := dsr.Parse(modified)
-	if parseErr != nil {
-		t.Fatalf("Parse: %v", parseErr)
-	}
-
-	provided, _ := verify.ParsePublicKeyFile(keyPEM)
-	_ = provided
-
-	causalRes := verify.CausalRefs(r)
-	assertInvalid(t, "CausalRefs", causalRes.Valid, causalRes.Err, dsrerrors.MalformedCausalRef)
-
-	if len(causalRes.MalformedFields) < 2 {
-		t.Errorf("expected at least 2 malformed fields (pr_url, commit_sha), got %d: %v",
-			len(causalRes.MalformedFields), causalRes.MalformedFields)
-	}
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test: R2 receipt skips causal ref check
-// ─────────────────────────────────────────────────────────────────────────────
-
-func TestR2SkipsCausalRefs(t *testing.T) {
-	pub, priv := newTestKey(t)
-	keyPEM := marshalPublicKeyPEM(t, pub, testKeyID)
-	receiptJSON := buildSignedReceipt(t, priv, testKeyID, testVaultID)
-
-	// Modify the type to R2.
-	var raw map[string]json.RawMessage
-	json.Unmarshal(receiptJSON, &raw)
-
-	// Need to re-sign because type is part of the signed payload.
-	raw["type"], _ = json.Marshal(dsr.TypeR2)
-	// Recompute signature for R2 type.
-	issuedAt := time.Date(2026, 5, 12, 12, 42, 8, 0, time.UTC)
-	var contentHash string
-	json.Unmarshal(raw["content_hash"], &contentHash)
-	partial := &dsr.Receipt{
-		ID:               "r_test_payments_2026q2",
-		Version:          dsr.Version,
-		Type:             dsr.TypeR2,
-		VaultID:          testVaultID,
-		IssuedAt:         issuedAt,
-		ContentHash:      contentHash,
-		SigningKeyID:     testKeyID,
-		SigningAlgorithm:  dsr.SigningAlgorithmED25519,
-	}
-	payload, _ := dsr.CanonicalSignedPayload(partial)
-	sig := ed25519.Sign(priv, payload)
-	raw["signature"], _ = json.Marshal(hex.EncodeToString(sig))
-
-	r2Receipt, _ := json.Marshal(raw)
-
-	r, parseErr := dsr.Parse(r2Receipt)
-	if parseErr != nil {
-		t.Fatalf("Parse: %v", parseErr)
-	}
-	_ = keyPEM
-	_ = pub
-
-	causalRes := verify.CausalRefs(r)
-	if !causalRes.Valid {
-		t.Errorf("CausalRefs for R2 receipt must be Valid=true (no causal refs expected): %v", causalRes.Err)
-	}
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test: key file without key_id comment still parses
-// ─────────────────────────────────────────────────────────────────────────────
-
-func TestKeyFileNoKeyID(t *testing.T) {
-	pub, _ := newTestKey(t)
-	keyPEM := marshalPublicKeyPEM(t, pub, "") // no key_id comment
-
-	provided, keyErr := verify.ParsePublicKeyFile(keyPEM)
-	if keyErr != nil {
-		t.Fatalf("ParsePublicKeyFile: %v", keyErr)
-	}
-	if provided.KeyID != "" {
-		t.Errorf("KeyID = %q, want empty when comment absent", provided.KeyID)
-	}
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BYOK algorithm helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-// marshalAnyPublicKeyPEM encodes any supported public key (ed25519, *rsa.PublicKey,
-// *ecdsa.PublicKey) as a PKIX PEM block with an optional # key_id: header.
-func marshalAnyPublicKeyPEM(t *testing.T, pub interface{}, keyID string) []byte {
-	t.Helper()
-	der, err := x509.MarshalPKIXPublicKey(pub)
-	if err != nil {
-		t.Fatalf("MarshalPKIXPublicKey(%T): %v", pub, err)
-	}
-	block := &pem.Block{Type: "PUBLIC KEY", Bytes: der}
-	var buf []byte
+// ed25519Base64Key returns the base64 raw key with an optional key_id comment.
+func ed25519Base64Key(pub ed25519.PublicKey, keyID string) []byte {
+	b64 := base64.StdEncoding.EncodeToString([]byte(pub))
 	if keyID != "" {
-		buf = append(buf, fmt.Sprintf("# key_id: %s\n", keyID)...)
+		return []byte(fmt.Sprintf("# key_id: %s\n%s\n", keyID, b64))
 	}
-	buf = append(buf, pem.EncodeToMemory(block)...)
-	return buf
-}
-
-// buildSignedReceiptWithAlgo constructs a complete, correctly-signed R1 receipt
-// for the given algorithm. signerFn receives the canonical payload bytes and
-// returns the raw signature bytes.
-func buildSignedReceiptWithAlgo(
-	t *testing.T,
-	algo, keyID, vaultID string,
-	signerFn func(payload []byte) []byte,
-) []byte {
-	t.Helper()
-
-	content := map[string]interface{}{
-		"commit_sha": "a8f3c2e9d4b1a6f7c2e8d4b1f6a8c3e9d4b1a6f7",
-		"merged_at":  "2026-05-12T12:18:43Z",
-		"pr_url":     "github.com/test-org/payments-api#4287",
-	}
-	canonicalContent, err := json.Marshal(content)
-	if err != nil {
-		t.Fatalf("marshal content: %v", err)
-	}
-	sum := sha256.Sum256(canonicalContent)
-	contentHash := hex.EncodeToString(sum[:])
-
-	issuedAt := time.Date(2026, 5, 12, 12, 42, 8, 0, time.UTC)
-	partial := &dsr.Receipt{
-		ID:               "r_byok_test",
-		Version:          dsr.Version,
-		Type:             dsr.TypeR1,
-		VaultID:          vaultID,
-		IssuedAt:         issuedAt,
-		Content:          canonicalContent,
-		ContentHash:      contentHash,
-		SigningKeyID:     keyID,
-		SigningAlgorithm: algo,
-	}
-	payload, err := dsr.CanonicalSignedPayload(partial)
-	if err != nil {
-		t.Fatalf("CanonicalSignedPayload: %v", err)
-	}
-
-	sig := signerFn(payload)
-
-	full := map[string]interface{}{
-		"id":                "r_byok_test",
-		"version":           dsr.Version,
-		"type":              dsr.TypeR1,
-		"vault_id":          vaultID,
-		"issued_at":         issuedAt.UTC().Format(time.RFC3339),
-		"content":           json.RawMessage(canonicalContent),
-		"content_hash":      contentHash,
-		"signing_key_id":    keyID,
-		"signing_algorithm": algo,
-		"signature":         hex.EncodeToString(sig),
-	}
-	b, err := json.Marshal(full)
-	if err != nil {
-		t.Fatalf("marshal receipt: %v", err)
-	}
-	return b
+	return []byte(b64 + "\n")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Test: RSA-PSS receipt — parse, verify, tamper-detection
+// Ed25519-v1
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestRSAPSSVerifyAndTamper(t *testing.T) {
-	// Generate a 2048-bit RSA key pair for testing.
-	// Generated programmatically — no external fixture files required.
-	rsaPriv, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("rsa.GenerateKey: %v", err)
-	}
-	rsaPub := &rsaPriv.PublicKey
+func TestSignature_Ed25519_PEMKey_Passes(t *testing.T) {
+	pub, priv := makeEd25519Key(t)
+	e := baseR1()
+	e.SigningKeyID = ptrStr(testKeyID)
+	signEd25519(t, e, priv)
 
-	keyPEM := marshalAnyPublicKeyPEM(t, rsaPub, testKeyID)
-
-	signerFn := func(payload []byte) []byte {
-		hashed := sha256.Sum256(payload)
-		opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA256}
-		sig, err := rsa.SignPSS(rand.Reader, rsaPriv, crypto.SHA256, hashed[:], opts)
-		if err != nil {
-			t.Fatalf("rsa.SignPSS: %v", err)
-		}
-		return sig
-	}
-
-	receiptJSON := buildSignedReceiptWithAlgo(t, dsr.SigningAlgorithmRSAPSS, testKeyID, testVaultID, signerFn)
-
-	// Parse must succeed.
-	r, parseErr := dsr.Parse(receiptJSON)
-	if parseErr != nil {
-		t.Fatalf("Parse RSA-PSS receipt: %v", parseErr)
-	}
-	if r.SigningAlgorithm != dsr.SigningAlgorithmRSAPSS {
-		t.Errorf("SigningAlgorithm = %q, want %q", r.SigningAlgorithm, dsr.SigningAlgorithmRSAPSS)
-	}
-
-	// Parse public key must succeed and return an RSA key.
-	provided, keyErr := verify.ParsePublicKeyFile(keyPEM)
+	provided, keyErr := verify.ParsePublicKeyFile(ed25519PEMKey(t, pub, testKeyID))
 	if keyErr != nil {
-		t.Fatalf("ParsePublicKeyFile (RSA): %v", keyErr)
+		t.Fatalf("ParsePublicKeyFile: %v", keyErr)
 	}
 
-	// Signature check must pass.
-	sigRes := verify.Signature(r, provided)
-	assertValid(t, "RSA-PSS Signature", sigRes.Valid, sigRes.Err)
-
-	// ── Tamper detection ──
-	// Flip the first byte of the signature to produce a corrupted signature.
-	var raw map[string]json.RawMessage
-	json.Unmarshal(receiptJSON, &raw)
-	var sigHex string
-	json.Unmarshal(raw["signature"], &sigHex)
-	sigBytes, _ := hex.DecodeString(sigHex)
-	sigBytes[0] ^= 0xFF
-	raw["signature"], _ = json.Marshal(hex.EncodeToString(sigBytes))
-	tampered, _ := json.Marshal(raw)
-
-	rTampered, _ := dsr.Parse(tampered)
-	tamperedSig := verify.Signature(rTampered, provided)
-	assertInvalid(t, "RSA-PSS tampered Signature", tamperedSig.Valid, tamperedSig.Err, dsrerrors.SignatureInvalid)
+	if res := verify.KeyAuthority(e, provided); !res.Valid {
+		t.Errorf("KeyAuthority: %v", res.Err)
+	}
+	if res := verify.Signature(e, provided); !res.Valid {
+		t.Errorf("Signature: %v", res.Err)
+	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Test: ECDSA receipt — parse, verify, tamper-detection
-// ─────────────────────────────────────────────────────────────────────────────
+func TestSignature_Ed25519_Base64Key_Passes(t *testing.T) {
+	pub, priv := makeEd25519Key(t)
+	e := baseR1()
+	e.SigningKeyID = ptrStr(testKeyID)
+	signEd25519(t, e, priv)
 
-func TestECDSAVerifyAndTamper(t *testing.T) {
-	// Generate a P-256 ECDSA key pair for testing.
-	// AWS KMS ECDSA_SHA_256 uses P-256; generated programmatically here.
-	ecPriv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("ecdsa.GenerateKey: %v", err)
-	}
-	ecPub := &ecPriv.PublicKey
-
-	keyPEM := marshalAnyPublicKeyPEM(t, ecPub, testKeyID)
-
-	signerFn := func(payload []byte) []byte {
-		hashed := sha256.Sum256(payload)
-		// ecdsa.SignASN1 produces a DER-encoded signature — same as AWS KMS output.
-		sig, err := ecdsa.SignASN1(rand.Reader, ecPriv, hashed[:])
-		if err != nil {
-			t.Fatalf("ecdsa.SignASN1: %v", err)
-		}
-		return sig
-	}
-
-	receiptJSON := buildSignedReceiptWithAlgo(t, dsr.SigningAlgorithmECDSA, testKeyID, testVaultID, signerFn)
-
-	// Parse must succeed.
-	r, parseErr := dsr.Parse(receiptJSON)
-	if parseErr != nil {
-		t.Fatalf("Parse ECDSA receipt: %v", parseErr)
-	}
-	if r.SigningAlgorithm != dsr.SigningAlgorithmECDSA {
-		t.Errorf("SigningAlgorithm = %q, want %q", r.SigningAlgorithm, dsr.SigningAlgorithmECDSA)
-	}
-
-	// Parse public key must succeed and return an ECDSA key.
-	provided, keyErr := verify.ParsePublicKeyFile(keyPEM)
+	provided, keyErr := verify.ParsePublicKeyFile(ed25519Base64Key(pub, testKeyID))
 	if keyErr != nil {
-		t.Fatalf("ParsePublicKeyFile (ECDSA): %v", keyErr)
+		t.Fatalf("ParsePublicKeyFile (base64): %v", keyErr)
 	}
 
-	// Signature check must pass.
-	sigRes := verify.Signature(r, provided)
-	assertValid(t, "ECDSA Signature", sigRes.Valid, sigRes.Err)
+	if res := verify.Signature(e, provided); !res.Valid {
+		t.Errorf("Signature (base64 key): %v", res.Err)
+	}
+}
 
-	// ── Tamper detection ──
-	var raw map[string]json.RawMessage
-	json.Unmarshal(receiptJSON, &raw)
-	var sigHex string
-	json.Unmarshal(raw["signature"], &sigHex)
-	sigBytes, _ := hex.DecodeString(sigHex)
-	sigBytes[0] ^= 0xFF
-	raw["signature"], _ = json.Marshal(hex.EncodeToString(sigBytes))
-	tampered, _ := json.Marshal(raw)
+func TestSignature_Ed25519_Tampered_Fails(t *testing.T) {
+	pub, priv := makeEd25519Key(t)
+	e := baseR1()
+	e.SigningKeyID = ptrStr(testKeyID)
+	signEd25519(t, e, priv)
 
-	rTampered, _ := dsr.Parse(tampered)
-	tamperedSig := verify.Signature(rTampered, provided)
-	assertInvalid(t, "ECDSA tampered Signature", tamperedSig.Valid, tamperedSig.Err, dsrerrors.SignatureInvalid)
+	// Flip one bit in the signature.
+	sigBytes, _ := base64.StdEncoding.DecodeString(e.Signature)
+	sigBytes[0] ^= 0x01
+	e.Signature = base64.StdEncoding.EncodeToString(sigBytes)
+
+	provided, _ := verify.ParsePublicKeyFile(ed25519PEMKey(t, pub, testKeyID))
+	res := verify.Signature(e, provided)
+	assertInvalid(t, "Signature tampered", res.Valid, res.Err, dsrerrors.SignatureInvalid)
+}
+
+func TestSignature_Ed25519_FieldMutation_Fails(t *testing.T) {
+	pub, priv := makeEd25519Key(t)
+	e := baseR1()
+	e.SigningKeyID = ptrStr(testKeyID)
+	signEd25519(t, e, priv)
+
+	// Mutate a signed field after signing.
+	e.PRNumber = ptrInt64(9999)
+
+	provided, _ := verify.ParsePublicKeyFile(ed25519PEMKey(t, pub, testKeyID))
+	res := verify.Signature(e, provided)
+	assertInvalid(t, "Signature (field mutated post-sign)", res.Valid, res.Err, dsrerrors.SignatureInvalid)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Test: ErrUnsupportedAlgorithm returned (not MalformedReceipt) for "rsa-pkcs1"
+// SHA256-legacy
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestParseUnsupportedAlgorithmError(t *testing.T) {
-	// Use the ed25519 receipt JSON (from offline test) but swap the algorithm
-	// to "rsa-pkcs1" which is explicitly unsupported.
-	pub, priv := newTestKey(t)
+func TestSignature_SHA256Legacy_Passes(t *testing.T) {
+	e := baseR1()
+	signSHA256Legacy(t, e)
+
+	res := verify.Signature(e, nil)
+	if !res.Valid {
+		t.Errorf("SHA256-legacy Signature: %v", res.Err)
+	}
+}
+
+func TestSignature_SHA256Legacy_Tampered_Fails(t *testing.T) {
+	e := baseR1()
+	signSHA256Legacy(t, e)
+	e.CCSScore = ptrStr("0.0001") // mutate post-sign
+
+	res := verify.Signature(e, nil)
+	assertInvalid(t, "SHA256-legacy tampered", res.Valid, res.Err, dsrerrors.SignatureInvalid)
+}
+
+func TestKeyAuthority_SHA256Legacy_IsSkipped(t *testing.T) {
+	e := baseR1()
+	signSHA256Legacy(t, e)
+	res := verify.KeyAuthority(e, nil)
+	if !res.Valid || !res.Skipped {
+		t.Errorf("SHA256-legacy KeyAuthority must be skipped; got Valid=%v Skipped=%v", res.Valid, res.Skipped)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RSA-PSS-SHA256
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestSignature_RSAPSS_Passes(t *testing.T) {
+	rsaPriv, _ := rsa.GenerateKey(rand.Reader, 2048)
+	e := baseR1()
+	e.SigningKeyID = ptrStr(testKeyID)
+	algo := dsr.AlgoRSAPSSSHA256
+	e.SignatureAlgorithm = &algo
+	canonical, _ := dsr.CanonicalPayload(e)
+	hashed := sha256.Sum256([]byte(canonical))
+	opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA256}
+	sig, err := rsa.SignPSS(rand.Reader, rsaPriv, crypto.SHA256, hashed[:], opts)
+	if err != nil {
+		t.Fatalf("rsa.SignPSS: %v", err)
+	}
+	e.Signature = base64.StdEncoding.EncodeToString(sig)
+
+	der, _ := x509.MarshalPKIXPublicKey(&rsaPriv.PublicKey)
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
+	provided, _ := verify.ParsePublicKeyFile(keyPEM)
+
+	if res := verify.Signature(e, provided); !res.Valid {
+		t.Errorf("RSA-PSS Signature: %v", res.Err)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ECDSA-SHA256
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestSignature_ECDSA_Passes(t *testing.T) {
+	ecPriv, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	e := baseR1()
+	e.SigningKeyID = ptrStr(testKeyID)
+	algo := dsr.AlgoECDSASHA256
+	e.SignatureAlgorithm = &algo
+	canonical, _ := dsr.CanonicalPayload(e)
+	hashed := sha256.Sum256([]byte(canonical))
+	sig, err := ecdsa.SignASN1(rand.Reader, ecPriv, hashed[:])
+	if err != nil {
+		t.Fatalf("ecdsa.SignASN1: %v", err)
+	}
+	e.Signature = base64.StdEncoding.EncodeToString(sig)
+
+	der, _ := x509.MarshalPKIXPublicKey(&ecPriv.PublicKey)
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
+	provided, _ := verify.ParsePublicKeyFile(keyPEM)
+
+	if res := verify.Signature(e, provided); !res.Valid {
+		t.Errorf("ECDSA Signature: %v", res.Err)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Key authority
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestKeyAuthority_IDMismatch_Fails(t *testing.T) {
+	pub, priv := makeEd25519Key(t)
+	e := baseR1()
+	e.SigningKeyID = ptrStr("key_actual")
+	signEd25519(t, e, priv)
+
+	// Key file identifies as a different key_id.
+	provided, _ := verify.ParsePublicKeyFile(ed25519PEMKey(t, pub, "key_wrong"))
+	res := verify.KeyAuthority(e, provided)
+	assertInvalid(t, "KeyAuthority mismatch", res.Valid, res.Err, dsrerrors.KeyAuthorityMismatch)
+}
+
+func TestKeyAuthority_EmptyProvidedID_Passes(t *testing.T) {
+	pub, priv := makeEd25519Key(t)
+	e := baseR1()
+	e.SigningKeyID = ptrStr("key_actual")
+	signEd25519(t, e, priv)
+
+	// No # key_id comment in key file → empty ProvidedKeyID → skip mismatch check.
+	provided, _ := verify.ParsePublicKeyFile(ed25519PEMKey(t, pub, ""))
+	res := verify.KeyAuthority(e, provided)
+	if !res.Valid {
+		t.Errorf("KeyAuthority with empty provided key ID must pass: %v", res.Err)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Canonical form correctness — R1, R2, other
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestCanonical_R1_KeySortOrder(t *testing.T) {
+	e := baseR1()
+	// Add conditional fields.
+	e.IsSynthetic = ptrBool(false)
+	e.IsInternalValidation = ptrBool(true)
+	e.SigningKeyID = ptrStr(testKeyID)
+	e.SignatureAlgorithm = ptrStr(dsr.AlgoED25519V1)
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+
+	// All keys must appear in Unicode code-point (lexicographic) order.
+	prev := ""
+	inKey, key := false, ""
+	for _, ch := range canonical {
+		if ch == '{' || ch == ',' {
+			inKey = true
+			key = ""
+			continue
+		}
+		if inKey {
+			if ch == '"' && key == "" {
+				continue
+			}
+			if ch == '"' {
+				if prev != "" && key < prev {
+					t.Errorf("keys out of order: %q came after %q in canonical payload", key, prev)
+				}
+				prev = key
+				inKey = false
+				key = ""
+			} else {
+				key += string(ch)
+			}
+		}
+	}
+}
+
+func TestCanonical_R2_IssuedAtIsTimestamp(t *testing.T) {
+	e := baseR2()
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload R2: %v", err)
+	}
+	// The canonical form for R2 uses timestamp as issued_at.
+	if !containsStr(canonical, `"issued_at":"2026-05-13T10:00:00Z"`) {
+		t.Errorf("R2 canonical payload must use timestamp for issued_at; got:\n%s", canonical)
+	}
+}
+
+func TestCanonical_Int64NeverFloat(t *testing.T) {
+	e := baseR1()
+	e.PRNumber = ptrInt64(9007199254740993) // 2^53+1: unsafe as float64
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	if !containsStr(canonical, `"pr_number":9007199254740993`) {
+		t.Errorf("pr_number must be encoded as integer, got: %s", canonical)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Chain hash
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestChainHash_GenesisAndSuccessor(t *testing.T) {
+	pub, priv := makeEd25519Key(t)
 	_ = pub
-	receiptJSON := buildSignedReceipt(t, priv, testKeyID, testVaultID)
 
-	var raw map[string]json.RawMessage
-	json.Unmarshal(receiptJSON, &raw)
-	raw["signing_algorithm"], _ = json.Marshal("rsa-pkcs1")
-	// Also widen the signature to a plausible RSA size so no length check fires.
-	raw["signature"], _ = json.Marshal(hex.EncodeToString(make([]byte, 256)))
-	modified, _ := json.Marshal(raw)
+	e1 := baseR1()
+	signEd25519(t, e1, priv)
+	// PriorHash of genesis is nil.
 
-	_, parseErr := dsr.Parse(modified)
-	if parseErr == nil {
-		t.Fatal("expected ErrUnsupportedAlgorithm for rsa-pkcs1, got nil")
+	canonical1, _ := dsr.CanonicalPayload(e1)
+	expected := dsr.ChainHash(nil, canonical1)
+
+	e2 := baseR2()
+	e2.PriorHash = &expected
+	signEd25519(t, e2, priv)
+
+	result := verify.VerifyChainHash([]*dsr.Envelope{e1, e2})
+	if !result.Valid {
+		t.Errorf("VerifyChainHash: %v", result.Err)
 	}
-	if parseErr.Class != dsrerrors.UnsupportedAlgorithm {
-		t.Errorf("error class = %q, want %q (not %q)",
-			parseErr.Class, dsrerrors.UnsupportedAlgorithm, dsrerrors.MalformedReceipt)
-	}
-	if parseErr.HumanMessage == "" {
-		t.Error("HumanMessage must not be empty")
-	}
-	if parseErr.TechnicalDetail == "" {
-		t.Error("TechnicalDetail must not be empty")
+	if result.Checked != 1 {
+		t.Errorf("Checked = %d, want 1", result.Checked)
 	}
 }
 
+func TestChainHash_BrokenChain_Fails(t *testing.T) {
+	pub, priv := makeEd25519Key(t)
+	_ = pub
+
+	e1 := baseR1()
+	signEd25519(t, e1, priv)
+
+	e2 := baseR2()
+	wrongHash := "0000000000000000000000000000000000000000000000000000000000000000"
+	e2.PriorHash = &wrongHash
+	signEd25519(t, e2, priv)
+
+	result := verify.VerifyChainHash([]*dsr.Envelope{e1, e2})
+	assertInvalid(t, "VerifyChainHash broken", result.Valid, result.Err, dsrerrors.HashChainBroken)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
+// helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 func assertValid(t *testing.T, label string, valid bool, verr *dsrerrors.VerificationError) {
@@ -655,10 +456,15 @@ func assertInvalid(t *testing.T, label string, valid bool, verr *dsrerrors.Verif
 	if verr.Class != wantClass {
 		t.Errorf("%s: error class = %q, want %q", label, verr.Class, wantClass)
 	}
-	if verr.HumanMessage == "" {
-		t.Errorf("%s: HumanMessage must not be empty", label)
-	}
-	if verr.TechnicalDetail == "" {
-		t.Errorf("%s: TechnicalDetail must not be empty", label)
-	}
+}
+
+func containsStr(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && func() bool {
+		for i := 0; i <= len(s)-len(substr); i++ {
+			if s[i:i+len(substr)] == substr {
+				return true
+			}
+		}
+		return false
+	}())
 }

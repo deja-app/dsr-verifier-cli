@@ -2,7 +2,6 @@ package bundle
 
 import (
 	"crypto/ed25519"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -44,12 +43,12 @@ func (r *BundleVerifyResult) AllPassed() bool {
 		r.CausalChain.Valid
 }
 
-// Tampered returns the count of receipts with signature or content-hash failures.
+// Tampered returns the count of receipts with signature failures.
 func (r *BundleVerifyResult) Tampered() int {
 	count := 0
 	for _, f := range r.PerReceipt.Failures {
 		for _, e := range f.Errors {
-			if e.Class == dsrerrors.SignatureInvalid || e.Class == dsrerrors.ContentHashMismatch {
+			if e.Class == dsrerrors.SignatureInvalid {
 				count++
 				break
 			}
@@ -58,8 +57,7 @@ func (r *BundleVerifyResult) Tampered() int {
 	return count
 }
 
-// Missing returns the count of receipts declared in the manifest but absent
-// from the archive or unparseable.
+// Missing returns the count of receipts that could not be parsed.
 func (r *BundleVerifyResult) Missing() int {
 	count := 0
 	for _, f := range r.PerReceipt.Failures {
@@ -86,7 +84,7 @@ type SeqIntegResult struct {
 	MinSeq int
 	MaxSeq int
 	Count  int
-	Gaps   []int // seq numbers that are missing
+	Gaps   []int
 	Err    *dsrerrors.VerificationError
 }
 
@@ -116,28 +114,25 @@ type ReceiptFailure struct {
 
 // CausalChainResult is returned by VerifyCausalChain.
 type CausalChainResult struct {
-	Valid         bool
-	Total         int // cross-bundle references found
-	Resolved      int // references resolved within this bundle
-	Unresolvable  []string // IDs referenced but not in bundle (not a failure — may be out-of-scope)
-	Err           *dsrerrors.VerificationError
+	Valid        bool
+	Total        int
+	Resolved     int
+	Unresolvable []string
+	Err          *dsrerrors.VerificationError
 }
 
 // RVCoverageResult summarises the RV receipt coverage.
 type RVCoverageResult struct {
-	TotalRV      int
-	TotalRVi     int
-	TotalRVf     int
-	DaysCovered  int
-	Streak       int // longest contiguous daily streak
-	TotalAnomalies int
+	TotalRV     int
+	DaysCovered int
+	Streak      int
 }
 
 // ClusterAnalysis holds the cluster_analysis_v1 result for this bundle.
 // Populated after all four verification checks have run.
 
 // ─────────────────────────────────────────────────────────────────────────────
-// VerifyBundle runs all four bundle checks and returns the aggregate result.
+// VerifyBundle
 // ─────────────────────────────────────────────────────────────────────────────
 
 func VerifyBundle(b *Bundle, provided *verify.PublicKeyWithID) *BundleVerifyResult {
@@ -150,7 +145,6 @@ func VerifyBundle(b *Bundle, provided *verify.PublicKeyWithID) *BundleVerifyResu
 		IssuerKeyID: b.Manifest.IssuerKeyID,
 	}
 
-	// Bundles are ed25519-only in v1; extract the ed25519 key for manifest verification.
 	ed25519Key, ok := provided.Key.(ed25519.PublicKey)
 	if !ok {
 		res.ManifestSig = ManifestSigResult{
@@ -158,7 +152,7 @@ func VerifyBundle(b *Bundle, provided *verify.PublicKeyWithID) *BundleVerifyResu
 			KeyID: b.Manifest.IssuerKeyID,
 			Err: dsrerrors.New(
 				dsrerrors.SignatureInvalid,
-				"Bundle manifests require an ed25519 public key. "+
+				"Bundle manifests require an Ed25519 public key. "+
 					"BYOK (RSA/ECDSA) keys are not supported for bundle manifest verification.",
 				fmt.Sprintf("key type: %T, expected: ed25519.PublicKey", provided.Key),
 			),
@@ -166,6 +160,7 @@ func VerifyBundle(b *Bundle, provided *verify.PublicKeyWithID) *BundleVerifyResu
 	} else {
 		res.ManifestSig = VerifyManifestSignature(b.Manifest, ed25519Key)
 	}
+
 	res.SequenceInteg = VerifySequenceIntegrity(b.Manifest)
 	res.PerReceipt = VerifyPerReceipt(b.Receipts, provided)
 	res.CausalChain = VerifyCausalChain(b.Receipts)
@@ -179,7 +174,7 @@ func VerifyBundle(b *Bundle, provided *verify.PublicKeyWithID) *BundleVerifyResu
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. Manifest signature verification
+// 1. Manifest signature
 // ─────────────────────────────────────────────────────────────────────────────
 
 func VerifyManifestSignature(m *Manifest, pubKey ed25519.PublicKey) ManifestSigResult {
@@ -202,11 +197,10 @@ func VerifyManifestSignature(m *Manifest, pubKey ed25519.PublicKey) ManifestSigR
 		res.Err = dsrerrors.New(
 			dsrerrors.SignatureInvalid,
 			fmt.Sprintf(
-				"The bundle manifest's ed25519 signature does not verify against key %q. "+
+				"The bundle manifest's Ed25519 signature does not verify against key %q. "+
 					"This means either: (1) the bundle was not signed by this key, "+
 					"(2) the manifest fields or receipt list were modified after signing, or "+
-					"(3) the signature is corrupt. "+
-					"Do not treat this bundle as evidence without resolving this failure.",
+					"(3) the signature is corrupt.",
 				m.IssuerKeyID,
 			),
 			fmt.Sprintf("ed25519.Verify returned false for manifest; key_id=%s", m.IssuerKeyID),
@@ -227,7 +221,6 @@ func VerifySequenceIntegrity(m *Manifest) SeqIntegResult {
 		return SeqIntegResult{Valid: true}
 	}
 
-	// Build a set of observed seq numbers.
 	seqSet := make(map[int]bool, len(m.Entries))
 	minSeq, maxSeq := m.Entries[0].Seq, m.Entries[0].Seq
 	for _, e := range m.Entries {
@@ -240,21 +233,12 @@ func VerifySequenceIntegrity(m *Manifest) SeqIntegResult {
 		}
 	}
 
-	// Check for gaps in [minSeq, maxSeq].
 	var gaps []int
 	for s := minSeq; s <= maxSeq; s++ {
 		if !seqSet[s] {
 			gaps = append(gaps, s)
 		}
 	}
-
-	// Also check consistency with declared seq_range.
-	declaredMin := m.SeqRange.Min
-	declaredMax := m.SeqRange.Max
-	if declaredMin != 0 && declaredMin != minSeq {
-		gaps = append(gaps, -1) // sentinel for declared-vs-actual mismatch
-	}
-	_ = declaredMax
 
 	res := SeqIntegResult{
 		MinSeq: minSeq,
@@ -273,8 +257,6 @@ func VerifySequenceIntegrity(m *Manifest) SeqIntegResult {
 			dsrerrors.MalformedReceipt,
 			fmt.Sprintf(
 				"The bundle has %d missing sequence number(s) in the range %d–%d. "+
-					"This may indicate that receipts were removed from the bundle after it was assembled, "+
-					"which would also cause the manifest signature to fail. "+
 					"A complete bundle must include every receipt in its declared sequence range.",
 				len(gaps), minSeq, maxSeq,
 			),
@@ -298,7 +280,6 @@ func VerifyPerReceipt(receipts []*ParsedReceipt, provided *verify.PublicKeyWithI
 	}
 
 	for _, pr := range receipts {
-		// Ensure type bucket exists.
 		typ := pr.Entry.Type
 		if typ == "" && pr.Receipt != nil {
 			typ = pr.Receipt.Type
@@ -308,7 +289,6 @@ func VerifyPerReceipt(receipts []*ParsedReceipt, provided *verify.PublicKeyWithI
 		}
 		res.ByType[typ].Total++
 
-		// If parsing failed, count as failed and continue.
 		if pr.ParseErr != nil {
 			res.ByType[typ].Failed++
 			res.Failed++
@@ -321,11 +301,8 @@ func VerifyPerReceipt(receipts []*ParsedReceipt, provided *verify.PublicKeyWithI
 			continue
 		}
 
-		// Run the four checks.
 		authRes := verify.KeyAuthority(pr.Receipt, provided)
 		sigRes := verify.Signature(pr.Receipt, provided)
-		hashRes := verify.ContentHash(pr.Receipt)
-		causalRes := verify.CausalRefs(pr.Receipt)
 
 		var errs []*dsrerrors.VerificationError
 		if authRes.Err != nil {
@@ -334,19 +311,13 @@ func VerifyPerReceipt(receipts []*ParsedReceipt, provided *verify.PublicKeyWithI
 		if sigRes.Err != nil {
 			errs = append(errs, sigRes.Err)
 		}
-		if hashRes.Err != nil {
-			errs = append(errs, hashRes.Err)
-		}
-		if causalRes.Err != nil {
-			errs = append(errs, causalRes.Err)
-		}
 
 		if len(errs) > 0 {
 			res.ByType[typ].Failed++
 			res.Failed++
 			res.Failures = append(res.Failures, ReceiptFailure{
 				Seq:       pr.Entry.Seq,
-				ReceiptID: pr.Receipt.ID,
+				ReceiptID: pr.Receipt.ReceiptID,
 				Type:      typ,
 				Errors:    errs,
 			})
@@ -363,17 +334,11 @@ func VerifyPerReceipt(receipts []*ParsedReceipt, provided *verify.PublicKeyWithI
 // 4. Causal chain consistency
 // ─────────────────────────────────────────────────────────────────────────────
 
-// receiptParentRef is used to extract an optional parent_receipt_id from content.
-type receiptParentRef struct {
-	ParentReceiptID string `json:"parent_receipt_id"`
-}
-
 func VerifyCausalChain(receipts []*ParsedReceipt) CausalChainResult {
-	// Build an index of receipt IDs in this bundle.
 	bundleIDs := make(map[string]bool, len(receipts))
 	for _, pr := range receipts {
 		if pr.Receipt != nil {
-			bundleIDs[pr.Receipt.ID] = true
+			bundleIDs[pr.Receipt.ReceiptID] = true
 		}
 	}
 
@@ -383,35 +348,21 @@ func VerifyCausalChain(receipts []*ParsedReceipt) CausalChainResult {
 		if pr.Receipt == nil {
 			continue
 		}
-		// Only R1, R1-L, R1-N carry parent references.
-		switch pr.Receipt.Type {
-		case dsr.TypeR1, dsr.TypeR1L, dsr.TypeR1N:
-		default:
+		// R2 receipts carry attribution_receipt_id pointing to their R1.
+		if !dsr.IsResolutionType(pr.Receipt.Type) {
 			continue
 		}
-
-		var ref receiptParentRef
-		if err := json.Unmarshal(pr.Receipt.Content, &ref); err != nil {
-			continue // content may not have the field; that's fine
-		}
-		if ref.ParentReceiptID == "" {
+		if pr.Receipt.AttributionReceiptID == nil || *pr.Receipt.AttributionReceiptID == "" {
 			continue
 		}
 
 		res.Total++
-		if bundleIDs[ref.ParentReceiptID] {
+		if bundleIDs[*pr.Receipt.AttributionReceiptID] {
 			res.Resolved++
 		} else {
-			// Parent not in bundle — this is allowed (partial bundles may
-			// legitimately reference receipts outside their scope).
-			res.Unresolvable = append(res.Unresolvable, ref.ParentReceiptID)
+			res.Unresolvable = append(res.Unresolvable, *pr.Receipt.AttributionReceiptID)
 		}
 	}
-
-	// A causal chain failure only occurs if a resolved reference is
-	// inconsistent — i.e., the parent exists in the bundle but its
-	// type is incompatible. For v1 we just count and report.
-	// (In-bundle inconsistency detection is a v2 concern.)
 
 	return res
 }
@@ -420,58 +371,25 @@ func VerifyCausalChain(receipts []*ParsedReceipt) CausalChainResult {
 // RV coverage analysis
 // ─────────────────────────────────────────────────────────────────────────────
 
-// rvContent is used to extract interval fields from RV receipt content.
-type rvContent struct {
-	IntervalStart string `json:"interval_start"`
-	IntervalEnd   string `json:"interval_end"`
-	Anomalies     int    `json:"anomalies"`
-	ScanAt        string `json:"scan_at"`
-}
-
-// AnalyseRVCoverage counts RV receipts and computes coverage statistics.
+// AnalyseRVCoverage counts RV receipts and computes day coverage from Timestamp.
 func AnalyseRVCoverage(receipts []*ParsedReceipt) RVCoverageResult {
 	var res RVCoverageResult
 	daySet := make(map[string]bool)
 
 	for _, pr := range receipts {
-		if pr.Receipt == nil {
+		if pr.Receipt == nil || pr.Receipt.Type != dsr.TypeRV {
 			continue
 		}
-		switch pr.Receipt.Type {
-		case dsr.TypeRV, dsr.TypeRVi, dsr.TypeRVf:
-		default:
-			continue
-		}
-
 		res.TotalRV++
-		switch pr.Receipt.Type {
-		case dsr.TypeRVi:
-			res.TotalRVi++
-		case dsr.TypeRVf:
-			res.TotalRVf++
-		}
 
-		var c rvContent
-		if err := json.Unmarshal(pr.Receipt.Content, &c); err != nil {
-			continue
-		}
-		res.TotalAnomalies += c.Anomalies
-
-		ts := c.IntervalStart
-		if ts == "" {
-			ts = c.ScanAt
-		}
-		if ts != "" {
-			if t, err := time.Parse(time.RFC3339, ts); err == nil {
-				day := t.UTC().Format("2006-01-02")
-				daySet[day] = true
-			}
+		if t, err := time.Parse(time.RFC3339, pr.Receipt.Timestamp); err == nil {
+			day := t.UTC().Format("2006-01-02")
+			daySet[day] = true
 		}
 	}
 
 	res.DaysCovered = len(daySet)
 
-	// Compute the longest contiguous streak.
 	if len(daySet) > 0 {
 		days := make([]string, 0, len(daySet))
 		for d := range daySet {

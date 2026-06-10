@@ -341,12 +341,9 @@ type BundleJSONPerReceipt struct {
 }
 
 type BundleJSONRVCoverage struct {
-	TotalRV      int `json:"total_rv"`
-	TotalRVi     int `json:"total_rvi"`
-	TotalRVf     int `json:"total_rvf"`
-	DaysCovered  int `json:"days_covered"`
-	Streak       int `json:"streak"`
-	TotalAnomalies int `json:"total_anomalies"`
+	TotalRV     int `json:"total_rv"`
+	DaysCovered int `json:"days_covered"`
+	Streak      int `json:"streak"`
 }
 
 type BundleJSONFailure struct {
@@ -389,12 +386,9 @@ func WriteBundleJSONReport(w io.Writer, res *bundle.BundleVerifyResult, duration
 	}
 
 	report.RVCoverage = BundleJSONRVCoverage{
-		TotalRV:        res.RVCoverage.TotalRV,
-		TotalRVi:       res.RVCoverage.TotalRVi,
-		TotalRVf:       res.RVCoverage.TotalRVf,
-		DaysCovered:    res.RVCoverage.DaysCovered,
-		Streak:         res.RVCoverage.Streak,
-		TotalAnomalies: res.RVCoverage.TotalAnomalies,
+		TotalRV:     res.RVCoverage.TotalRV,
+		DaysCovered: res.RVCoverage.DaysCovered,
+		Streak:      res.RVCoverage.Streak,
 	}
 
 	// Bundle-level failures.

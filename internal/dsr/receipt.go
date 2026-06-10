@@ -1,118 +1,130 @@
-// Package dsr parses DSR/1.0.1 receipts.
+// Package dsr parses DSR receipts in the ExternalDSREnvelope format.
 //
-// The canonical receipt format is a JSON object with the following top-level
-// fields. Strict parsing is enforced: unknown fields are rejected and all
-// required fields must be present.
+// The ExternalDSREnvelope is the JSON structure of a .dsr file shared with auditors.
+// Field names match the JSON wire format exactly.
+//
+// Critical invariant: PRNumber and TimeToResolutionMs must be decoded as int64,
+// never float64. The canonical form for both v1-legacy and v2-jcs passes these
+// as JSON integers via strconv.FormatInt — if they were decoded as float64 and
+// re-encoded, ECMA-262 vs Go float divergence could produce different bytes for
+// large values, breaking signature verification.
 package dsr
 
-import (
-	"encoding/json"
-	"time"
-)
-
-// Version is the only receipt format version this CLI supports.
-const Version = "DSR/1.0.1"
-
-// Valid receipt types in DSR/1.0.1.
+// Receipt type constants.
 const (
-	TypeR1   = "R1"   // Attribution
-	TypeR1L  = "R1-L" // Low Confidence
-	TypeR1N  = "R1-N" // No Match
-	TypeR2   = "R2"   // Resolution
-	TypeRV   = "RV"   // Vault Verification (continuous integrity)
-	TypeRVi  = "RV-i" // Vault Verification (interval start)
-	TypeRVf  = "RV-f" // Vault Verification (interval end)
+	TypeR0  = "R0"
+	TypeR1  = "R1"
+	TypeR1L = "R1-L"
+	TypeR1N = "R1-N"
+	TypeR2  = "R2"
+	TypeR2F = "R2-F"
+	TypeR2R = "R2-R"
+	TypeRV  = "RV"
+	TypeRE  = "RE"
+	TypeRG  = "RG"
 )
 
-// validTypes is the complete set of accepted receipt type values.
-var validTypes = map[string]bool{
-	TypeR1:  true,
-	TypeR1L: true,
-	TypeR1N: true,
-	TypeR2:  true,
-	TypeRV:  true,
-	TypeRVi: true,
-	TypeRVf: true,
-}
-
-// ValidType reports whether t is a recognized DSR/1.0.1 receipt type.
-func ValidType(t string) bool { return validTypes[t] }
-
-// Supported signing algorithms.
+// Signature algorithm constants.
 const (
-	SigningAlgorithmED25519    = "ed25519"
-	SigningAlgorithmRSAPSS     = "rsa-pss-sha256"
-	SigningAlgorithmECDSA      = "ecdsa-sha256"
+	AlgoSHA256Legacy = "sha256-legacy"
+	AlgoED25519V1    = "ed25519-v1"
+	AlgoRSAPSSSHA256 = "rsa-pss-sha256"
+	AlgoECDSASHA256  = "ecdsa-sha256"
 )
 
-// Receipt is the parsed, validated representation of a DSR/1.0.1 (or DSR/1.0
-// for RV types) receipt.
-//
-// The Signature field holds the raw signature bytes decoded from the hex
-// string stored in the JSON. For ed25519 this is 64 bytes; for RSA-PSS it
-// is the RSA key size in bytes; for ECDSA it is an ASN.1/DER-encoded value.
-// The Content field is the raw JSON bytes of the receipt body, preserved
-// verbatim for canonical hash computation.
-//
-// RV-specific fields (RV, RV-i, RV-f receipts) are populated when the type
-// is TypeRV, TypeRVi, or TypeRVf. These are the fields signed by
-// CanonicalRvSignedPayload, which must match rv-receipt-canonical.ts.
-type Receipt struct {
-	ID               string          `json:"id"`
-	Version          string          `json:"version"`
-	Type             string          `json:"type"`
-	VaultID          string          `json:"vault_id"`
-	IssuedAt         time.Time       `json:"issued_at"`
-	Content          json.RawMessage `json:"content"`
-	ContentHash      string          `json:"content_hash"`
-	SigningKeyID     string          `json:"signing_key_id"`
-	SigningAlgorithm  string          `json:"signing_algorithm"`
-	Signature        HexBytes        `json:"signature"`
-
-	// RV-specific signing fields — populated for TypeRV, TypeRVi, TypeRVf.
-	// These fields correspond to the 10-field payload in rv-receipt-canonical.ts.
-	// They are omitted (zero-value) for standard receipt types.
-	//
-	// IssuedAtRaw captures the verbatim issued_at string from the receipt JSON
-	// for use in the RV canonical form. This preserves millisecond precision
-	// (e.g. "2026-01-01T00:00:00.000Z") which would be lost if the time.Time
-	// field were reformatted. It is populated by the custom UnmarshalJSON.
-	IssuedAtRaw             string   `json:"-"` // not a JSON field; set by custom unmarshal
-	ChecksPassed             []string `json:"checks_passed,omitempty"`
-	ReceiptsAttestedCount    int      `json:"receipts_attested_count,omitempty"`
-	RvType                   string   `json:"rv_type,omitempty"`
-	VerificationRunID        string   `json:"verification_run_id,omitempty"`
-	VerificationMode         string   `json:"verification_mode,omitempty"`
-	VerificationStartedAt    string   `json:"verification_started_at,omitempty"`
-	VerificationCompletedAt  string   `json:"verification_completed_at,omitempty"`
+// KnownTypes is the complete set of accepted receipt types.
+var KnownTypes = map[string]bool{
+	TypeR0: true, TypeR1: true, TypeR1L: true, TypeR1N: true,
+	TypeR2: true, TypeR2F: true, TypeR2R: true,
+	TypeRV: true, TypeRE: true, TypeRG: true,
 }
 
-// HexBytes is a []byte that marshals to/from a lowercase hex string in JSON.
-type HexBytes []byte
+// Envelope is the parsed .dsr receipt shared with auditors.
+type Envelope struct {
+	DSRVersion           string      `json:"dsr_version"`
+	Type                 string      `json:"type"`
+	ReceiptID            string      `json:"receipt_id"`
+	VaultID              string      `json:"vault_id"`
+	Timestamp            string      `json:"timestamp"`
+	Actor                string      `json:"actor"`
+	Origin               string      `json:"origin"`
+	Signature            string      `json:"signature"`
+	SignatureAlgorithm   *string     `json:"signature_algorithm"`
+	CanonicalFormVersion *string     `json:"canonical_form_version"`
+	PriorHash            *string     `json:"prior_hash"`
+	SigningKeyID         *string     `json:"signing_key_id"`
 
-// UnmarshalJSON decodes a JSON hex string into bytes.
-func (h *HexBytes) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err != nil {
-		return err
+	// Attribution fields (R1, R1-L, R1-N)
+	Repository           *string     `json:"repository"`
+	PRNumber             *int64      `json:"pr_number"`
+	ServiceZone          *string     `json:"service_zone"`
+	ErrorClass           *string     `json:"error_class"`
+	MissingField         *string     `json:"missing_field"`
+	CCSScore             *string     `json:"ccs_score"`
+	Matched              *string     `json:"matched"`
+	Confidence           *string     `json:"confidence"`
+	ProducerGraphScore   *string     `json:"producer_graph_score"`
+	SchemaStabilityScore *string     `json:"schema_stability_score"`
+	IsSynthetic          *bool       `json:"is_synthetic"`
+	IsInternalValidation *bool       `json:"is_internal_validation"`
+	IsTrial              *bool       `json:"is_trial"`
+	IssuedAt             *string     `json:"issued_at"`
+	CCSFactors           *CCSFactors `json:"ccs_factors"`
+
+	// Resolution fields (R2, R2-F, R2-R)
+	AttributionReceiptID *string `json:"attribution_receipt_id"`
+	IncidentID           *string `json:"incident_id"`
+	ResolvedAt           *string `json:"resolved_at"`
+	TimeToResolutionMs   *int64  `json:"time_to_resolution_ms"`
+	FileGateScore        *string `json:"file_gate_score"`
+	RateGateScore        *string `json:"rate_gate_score"`
+	InfraGateScore       *string `json:"infra_gate_score"`
+	FeatureGateScore     *string `json:"feature_gate_score"`
+	DurationGateScore    *string `json:"duration_gate_score"`
+	GatesPassed          *bool   `json:"gates_passed"`
+	GateEvaluatedAt      *string `json:"gate_evaluated_at"`
+	DSRFixCode           *string `json:"dsr_fix_code"`
+}
+
+// CCSFactors holds the W1–W8 factor inputs for CCS recomputation.
+type CCSFactors struct {
+	W1 float64 `json:"w1"`
+	W2 float64 `json:"w2"`
+	W3 float64 `json:"w3"`
+	W4 float64 `json:"w4"`
+	W5 float64 `json:"w5"`
+	W6 float64 `json:"w6"`
+	W7 float64 `json:"w7"`
+	W8 float64 `json:"w8"`
+}
+
+// SigAlgo returns the effective signature algorithm.
+// Absent or empty → "sha256-legacy".
+func (e *Envelope) SigAlgo() string {
+	if e.SignatureAlgorithm == nil || *e.SignatureAlgorithm == "" {
+		return AlgoSHA256Legacy
 	}
-	b, err := hexDecode(s)
-	if err != nil {
-		return err
+	return *e.SignatureAlgorithm
+}
+
+// FormVersion returns the effective canonical form version.
+// Absent, null, or unknown → "v1-legacy".
+func (e *Envelope) FormVersion() string {
+	if e.CanonicalFormVersion == nil {
+		return "v1-legacy"
 	}
-	*h = b
-	return nil
+	if *e.CanonicalFormVersion == "v2-jcs" {
+		return "v2-jcs"
+	}
+	return "v1-legacy"
 }
 
-// MarshalJSON encodes bytes as a lowercase hex string.
-func (h HexBytes) MarshalJSON() ([]byte, error) {
-	return json.Marshal(hexEncode(h))
+// IsAttributionType reports whether t is R1, R1-L, or R1-N.
+func IsAttributionType(t string) bool {
+	return t == TypeR1 || t == TypeR1L || t == TypeR1N
 }
 
-// R1Content is the parsed body of R1, R1-L, and R1-N receipts.
-// These types carry causal artifact references that the verifier validates structurally.
-type R1Content struct {
-	PRURL     string `json:"pr_url"`
-	CommitSHA string `json:"commit_sha"`
-	MergedAt  string `json:"merged_at"`
+// IsResolutionType reports whether t is R2, R2-F, or R2-R.
+func IsResolutionType(t string) bool {
+	return t == TypeR2 || t == TypeR2F || t == TypeR2R
 }

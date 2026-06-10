@@ -14,38 +14,44 @@ package dsrerrors
 type ErrorClass string
 
 const (
-	// SignatureInvalid means the ed25519 signature does not verify against the
-	// provided public key and the receipt's signed payload. The receipt may have
-	// been produced by a different key, or the signature bytes were corrupted.
+	// SignatureInvalid means the cryptographic signature does not verify against
+	// the provided public key and the receipt's canonical signed payload. The receipt
+	// may have been produced by a different key, or the signed fields were modified
+	// after issuance.
 	SignatureInvalid ErrorClass = "signature_invalid"
 
-	// ContentHashMismatch means the SHA-256 hash of the receipt's current content
-	// does not match the content_hash field that was signed. The content was
-	// modified after the receipt was issued.
-	ContentHashMismatch ErrorClass = "content_hash_mismatch"
-
-	// KeyAuthorityMismatch means the key_id embedded in the receipt does not
-	// match the key_id declared in the provided public key file. The auditor
+	// KeyAuthorityMismatch means the signing_key_id embedded in the receipt does
+	// not match the key_id declared in the provided public key file. The auditor
 	// is using the wrong key for this receipt.
 	KeyAuthorityMismatch ErrorClass = "key_authority_mismatch"
 
+	// HashChainBroken means the prior_hash on a receipt does not equal the
+	// SHA-256 of the previous receipt's canonical payload. The receipts in this
+	// bundle do not form a consistent signed chain — one may have been substituted
+	// or the bundle is missing entries.
+	HashChainBroken ErrorClass = "hash_chain_broken"
+
 	// MalformedReceipt means the receipt file could not be parsed as a valid
-	// DSR/1.0.1 receipt. The file may be corrupt, truncated, or not a DSR receipt.
+	// DSR receipt. The file may be corrupt, truncated, or not a DSR receipt.
 	MalformedReceipt ErrorClass = "malformed_receipt"
 
 	// MalformedCausalRef means one or more causal artifact references in the
-	// receipt content (PR identifiers, commit SHAs) do not match the expected
-	// format for their type.
+	// receipt contain malformed values (e.g. invalid PR URL or commit SHA format).
 	MalformedCausalRef ErrorClass = "malformed_causal_ref"
 
-	// KeyParseError means the public key file could not be parsed as a valid
-	// public key in PEM or DER format.
+	// KeyParseError means the public key file could not be parsed. Supported
+	// formats: PKIX PEM ("BEGIN PUBLIC KEY"), base64 raw Ed25519 (32 bytes).
 	KeyParseError ErrorClass = "key_parse_error"
 
 	// UnsupportedAlgorithm means the receipt declares a signing algorithm that
-	// this verifier does not implement. Supported algorithms are ed25519,
-	// rsa-pss-sha256, and ecdsa-sha256.
+	// this verifier does not implement. Supported: sha256-legacy, ed25519-v1,
+	// rsa-pss-sha256, ecdsa-sha256.
 	UnsupportedAlgorithm ErrorClass = "unsupported_algorithm"
+
+	// ContentHashMismatch is kept for backward compatibility with bundle output
+	// that may reference this class; it is no longer produced by the single-receipt
+	// verifier (the ExternalDSREnvelope format does not carry a separate content_hash).
+	ContentHashMismatch ErrorClass = "content_hash_mismatch"
 )
 
 // VerificationError is a typed, auditor-friendly verification failure.
@@ -75,8 +81,6 @@ func New(class ErrorClass, human, detail string) *VerificationError {
 
 // ParseErrorDetail carries line and column information for JSON parse failures.
 type ParseErrorDetail struct {
-	// Offset is the byte offset in the input where parsing failed.
 	Offset int64
-	// Msg is the underlying parser message.
-	Msg string
+	Msg    string
 }
