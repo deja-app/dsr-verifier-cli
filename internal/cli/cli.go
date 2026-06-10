@@ -38,7 +38,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runInfo(args[1:], stdout, stderr)
 	case "--version", "-version", "version":
 		fmt.Fprintf(stdout, "dsr-verifier-cli v%s (commit: %s)\n", Version, BuildCommit)
-		fmt.Fprintln(stdout, "DSR/1.0.1 · MIT License · https://github.com/deja-dev/dsr-verifier-cli")
+		fmt.Fprintln(stdout, "DSR/1.0.2 · Apache-2.0 · https://github.com/deja-dev/dsr-verifier-cli")
 		fmt.Fprintln(stdout, "Offline · zero network calls")
 		return exitSuccess
 	case "--help", "-help", "-h", "help":
@@ -51,17 +51,21 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-const rootHelp = `dsr-verifier-cli — offline DSR/1.0.1 receipt verifier
+const rootHelp = `dsr-verifier-cli — offline DSR receipt verifier
 
 Usage:
-  dsr-verifier-cli verify        <receipt.dsr> --key <pubkey>  verify a receipt
-  dsr-verifier-cli verify-bundle <bundle.dsr.bundle> --key <pubkey>  verify a bundle
-  dsr-verifier-cli info          <receipt.dsr>                 inspect metadata
-  dsr-verifier-cli --version                                   version info
-  dsr-verifier-cli --help                                      this help
+  dsr-verifier-cli verify        <receipt.dsr> [--public-key <file>] [--byok-key <file>]
+  dsr-verifier-cli verify-bundle <bundle.dsr.bundle> --public-key <file>
+  dsr-verifier-cli info          <receipt.dsr>
+  dsr-verifier-cli --version
+  dsr-verifier-cli --help
+
+Key flags:
+  --public-key <file>   Déjà managed key (PEM or base64 Ed25519; see keys/deja-managed-v1.pub)
+  --byok-key <file>     Customer BYOK key (RSA-PSS or ECDSA PEM)
+  sha256-legacy receipts require no key flag
 
 Common flags:
-  --key <file>    path to the PEM-encoded ed25519 public key
   --json          machine-readable JSON output
   --quiet         exit code only (for scripting)
   --no-log        disable local audit log (./verifier.log)
