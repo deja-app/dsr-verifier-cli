@@ -103,7 +103,32 @@ major release without a deprecation notice in the release notes.
 
 ## Changelog
 
-### v1.1.0 (2026-06-02)
+### v1.1.0 (2026-07-08)
+
+**cluster_analysis_v1 — anomaly pattern analysis**
+
+- `verify-bundle` now runs `cluster_analysis_v1` after the four verification
+  checks complete. When a bundle has ≥10 anomalies the module runs three
+  statistical tests and emits a `pattern_signature` and `confidence_score`.
+- **Zone concentration** — chi-squared test across service zones; fires when
+  p < 0.001 (dominant zone holds a disproportionate share of anomalies).
+- **Temporal clustering** — Poisson multiplier over a fixed 72-hour scan
+  window; fires when the burst rate exceeds 10× the baseline.
+- **Cascade detection** — Jaccard similarity between anomaly-category sets;
+  fires when two or more categories share ≥50% of implicated receipt IDs.
+- **Pattern signatures**: `consistent_with_targeted_deletion`,
+  `consistent_with_mass_rekey`, `consistent_with_isolated_corruption`,
+  or `nominal` (nothing detected or fewer than 10 anomalies).
+- **Fisher's method** (`combinePValuesFisher`) combines p-values from the
+  tests that ran using the chi-squared identity for even degrees of freedom,
+  producing a `confidence_score` in [0, 0.999]. Partial p-values (when a
+  test cannot run) are excluded rather than padded with conservative values.
+- Human output adds a `confidence N.NN` annotation to the pattern line and
+  a Fisher-combined confidence score line. JSON output adds a
+  `cluster_analysis` object to the report (omitted when nil).
+- Zero external dependencies: the chi-squared survival function is
+  implemented exactly via the Poisson CDF identity using only `math.Exp`
+  and `math.Log` — no gonum or other third-party packages.
 
 **BYOK key-type support**
 

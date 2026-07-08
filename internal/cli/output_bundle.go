@@ -181,8 +181,8 @@ func PrintBundleResults(p *Printer, res *bundle.BundleVerifyResult, bundleFile s
 		if clusterResult.Skipped {
 			p.Indent(p.Dim(fmt.Sprintf("Anomaly pattern analysis skipped (fewer than %d anomalies)", bundle.MinAnomalyThreshold)))
 		} else {
-			p.Detail("  Pattern", clusterResult.PatternSignature)
-			p.Detail("  Confidence", fmt.Sprintf("%.2f  (%s)", clusterResult.ConfidenceScore, clusterResult.ConfidenceRationale))
+			p.Detail("  Pattern", fmt.Sprintf("%s (confidence %.2f)", clusterResult.PatternSignature, clusterResult.PatternSignatureConfidence))
+			p.Detail("  Confidence", fmt.Sprintf("%.3f  (%s)", clusterResult.ConfidenceScore, clusterResult.ConfidenceRationale))
 			p.Detail("  Anomalies", fmt.Sprintf("%d", clusterResult.AnomalyCount))
 			if clusterResult.ZoneConcentration.Detected {
 				p.Detail("  Zone", fmt.Sprintf("%s (%.0f%% of anomalies, %s)",

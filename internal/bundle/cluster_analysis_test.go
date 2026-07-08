@@ -392,9 +392,15 @@ func TestConfidenceScore_TemporalOnlyDetected(t *testing.T) {
 		t.Skipf("temporal not detected (multiplier=%.1f); test precondition unmet", res.TemporalClustering.Multiplier)
 	}
 
-	if res.ConfidenceScore < 0.65 || res.ConfidenceScore >= 0.85 {
-		t.Errorf("temporal-only: expected ConfidenceScore in [0.65, 0.85), got %.2f (rationale: %q)",
+	// With Fisher's method a single p < 0.001 (temporal) combined with two
+	// conservative p = 0.5 values (zone, cascade) yields a high overall score.
+	// The heuristic-era range [0.65, 0.85) no longer applies.
+	if res.ConfidenceScore < 0.85 {
+		t.Errorf("temporal-only: expected ConfidenceScore ≥ 0.85 (Fisher one-signal), got %.3f (rationale: %q)",
 			res.ConfidenceScore, res.ConfidenceRationale)
+	}
+	if !contains(res.ConfidenceRationale, "moderate confidence") {
+		t.Errorf("temporal-only: expected 'moderate confidence' in rationale, got %q", res.ConfidenceRationale)
 	}
 }
 
@@ -489,5 +495,213 @@ func TestAnalyseClusterPatterns_TargetedDeletion(t *testing.T) {
 	}
 	if res.ZoneConcentration.DominantZone != "payments-checkout" {
 		t.Errorf("wrong dominant zone: %q", res.ZoneConcentration.DominantZone)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pattern signature confidence
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestPatternSignatureConfidence_HighMatch(t *testing.T) {
+	// All three tests fire → confident_with_targeted_deletion with all signals.
+	const burstStart = float64(1000)
+	missing := anomalies(50, CategoryMissingEntries, "payments-checkout", burstStart, 0.5)
+	sigMis := make([]Anomaly, 12)
+	for i := range sigMis {
+		sigMis[i] = Anomaly{
+			Category:    CategorySignatureMismatches,
+			ReceiptID:   missing[i].ReceiptID,
+			ServiceZone: "payments-checkout",
+			OccurredAt:  ts(burstStart + float64(i)*0.5),
+		}
+	}
+	background := Anomaly{
+		Category: CategoryMissingEntries, ReceiptID: "bg", ServiceZone: "payments-checkout",
+		OccurredAt: ts(0),
+	}
+	var all []Anomaly
+	all = append(all, missing...)
+	all = append(all, sigMis...)
+	all = append(all, background)
+
+	res := AnalyseClusterPatterns(all)
+
+	if res.CascadeDetected.Detected && res.ZoneConcentration.Detected && res.TemporalClustering.Detected {
+		if res.PatternSignatureConfidence < 0.9 {
+			t.Errorf("all-three signals: expected PatternSignatureConfidence ≥ 0.9, got %.2f", res.PatternSignatureConfidence)
+		}
+	}
+}
+
+func TestPatternSignatureConfidence_MediumMatch(t *testing.T) {
+	// Mass-rekey with temporal only (no zone, no cascade) → medium confidence.
+	var input []Anomaly
+	for i := 0; i < 25; i++ {
+		zone := "zone-a"
+		if i%2 == 1 {
+			zone = "zone-b"
+		}
+		input = append(input, Anomaly{
+			Category:    CategorySignatureMismatches,
+			ReceiptID:   "rcpt-" + string(rune('a'+i)),
+			ServiceZone: zone,
+			OccurredAt:  ts(1000 + float64(i)*0.5),
+		})
+	}
+	input = append(input, Anomaly{
+		Category: CategorySignatureMismatches, ReceiptID: "bg",
+		ServiceZone: "zone-a", OccurredAt: ts(0),
+	})
+	res := AnalyseClusterPatterns(input)
+
+	if !res.TemporalClustering.Detected {
+		t.Skipf("temporal not detected; test precondition unmet")
+	}
+	if res.ZoneConcentration.Detected || res.CascadeDetected.Detected {
+		t.Skipf("zone or cascade also detected; this tests temporal-only case")
+	}
+	// Temporal only → mass_rekey with 0.55 confidence (< 0.6 counts as weak, 0.6–0.9 medium)
+	// 0.55 is defined as the weak-match case for temporal-only mass_rekey.
+	if res.PatternSignatureConfidence >= 0.6 {
+		t.Errorf("temporal-only mass_rekey: expected PatternSignatureConfidence < 0.6, got %.2f", res.PatternSignatureConfidence)
+	}
+}
+
+func TestPatternSignatureConfidence_WeakMatch(t *testing.T) {
+	// Zone only → isolated_corruption at moderate confidence (0.68).
+	input := anomalies(10, CategorySignatureMismatches, "auth-service", 0, 24)
+	res := AnalyseClusterPatterns(input)
+
+	if !res.ZoneConcentration.Detected {
+		t.Skipf("zone_concentration not detected; test precondition unmet (all same zone means detected by default)")
+	}
+	if res.TemporalClustering.Detected || res.CascadeDetected.Detected {
+		t.Skipf("temporal or cascade also detected; this tests zone-only case")
+	}
+	if res.PatternSignatureConfidence < 0.6 || res.PatternSignatureConfidence >= 0.9 {
+		t.Errorf("zone-only isolated_corruption: expected PatternSignatureConfidence in [0.6,0.9), got %.2f", res.PatternSignatureConfidence)
+	}
+}
+
+func TestPatternSignatureConfidence_NoPattern(t *testing.T) {
+	// Below threshold → nominal, confidence 0.
+	input := anomalies(5, CategorySignatureMismatches, "zone-a", 0, 1)
+	res := AnalyseClusterPatterns(input)
+
+	if res.PatternSignature != "nominal" {
+		t.Errorf("below threshold: expected nominal, got %q", res.PatternSignature)
+	}
+	if res.PatternSignatureConfidence != 0.0 {
+		t.Errorf("below threshold: expected PatternSignatureConfidence=0, got %.2f", res.PatternSignatureConfidence)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fisher's method unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestCombinePValuesFisher_KnownValues(t *testing.T) {
+	// Reference: [0.001, 0.001, 0.01]
+	// chi² = -2*(ln(0.001)+ln(0.001)+ln(0.01)) = -2*(-6.908-6.908-4.605) = 36.842
+	// df = 6, x = 18.421
+	// Q(3, 18.421) = e^(-18.421)*(1 + 18.421 + 18.421²/2)
+	// Expected combined_p ≈ 1.89e-6
+	combinedP := combinePValuesFisher([]float64{0.001, 0.001, 0.01})
+	if combinedP > 1e-4 {
+		t.Errorf("expected combined_p < 1e-4 for [0.001, 0.001, 0.01], got %g", combinedP)
+	}
+	if combinedP <= 0 {
+		t.Errorf("combined_p should be positive, got %g", combinedP)
+	}
+}
+
+func TestCombinePValuesFisher_AllConservative(t *testing.T) {
+	// All p = 0.5 → should give combined p ≈ 0.655 (no evidence of clustering)
+	combinedP := combinePValuesFisher([]float64{0.5, 0.5, 0.5})
+	if combinedP < 0.5 || combinedP > 0.9 {
+		t.Errorf("all-conservative: expected combined_p in [0.5, 0.9], got %g", combinedP)
+	}
+}
+
+func TestCombinePValuesFisher_Empty(t *testing.T) {
+	if p := combinePValuesFisher(nil); p != 1.0 {
+		t.Errorf("empty: expected 1.0, got %g", p)
+	}
+}
+
+func TestConfidenceScore_FisherSanity(t *testing.T) {
+	// Sanity check: all detected → > 0.95; none detected → < 0.5.
+	const burstStart = float64(1000)
+	missing := anomalies(50, CategoryMissingEntries, "payments-checkout", burstStart, 0.5)
+	sigMis := make([]Anomaly, 12)
+	for i := range sigMis {
+		sigMis[i] = Anomaly{
+			Category:    CategorySignatureMismatches,
+			ReceiptID:   missing[i].ReceiptID,
+			ServiceZone: "payments-checkout",
+			OccurredAt:  ts(burstStart + float64(i)*0.5),
+		}
+	}
+	bg := Anomaly{Category: CategoryMissingEntries, ReceiptID: "bg",
+		ServiceZone: "payments-checkout", OccurredAt: ts(0)}
+	var all []Anomaly
+	all = append(all, missing...)
+	all = append(all, sigMis...)
+	all = append(all, bg)
+
+	resAll := AnalyseClusterPatterns(all)
+	if resAll.ZoneConcentration.Detected && resAll.TemporalClustering.Detected && resAll.CascadeDetected.Detected {
+		if resAll.ConfidenceScore < 0.95 {
+			t.Errorf("all-detected: expected ConfidenceScore > 0.95, got %.3f", resAll.ConfidenceScore)
+		}
+	}
+
+	// None detected: uniform spread across multiple zones, no timestamps, single category.
+	var noneInput []Anomaly
+	for _, z := range []string{"zone-a", "zone-b", "zone-c", "zone-d"} {
+		noneInput = append(noneInput, anomalies(5, CategorySignatureMismatches, z, 0, 0)...)
+	}
+	// strip timestamps so temporal can't run
+	for i := range noneInput {
+		noneInput[i].OccurredAt = time.Time{}
+	}
+	resNone := AnalyseClusterPatterns(noneInput)
+	if !resNone.ZoneConcentration.Detected && !resNone.CascadeDetected.Detected {
+		if resNone.ConfidenceScore >= 0.5 {
+			t.Errorf("none-detected: expected ConfidenceScore < 0.5, got %.3f", resNone.ConfidenceScore)
+		}
+	}
+}
+
+func TestConfidenceScore_PartialPValues(t *testing.T) {
+	// When zone has no zone info (NumZones == 0) and temporal has no timestamps,
+	// only cascade runs. Fisher's method uses 1 p-value (cascade).
+	// Single category → cascade can't produce overlapping pairs → not detected.
+	input := make([]Anomaly, 12)
+	for i := range input {
+		input[i] = Anomaly{
+			Category:  CategorySignatureMismatches,
+			ReceiptID: "rcpt-" + string(rune('a'+i)),
+			// no ServiceZone → zone test has 0 zones
+			// no OccurredAt → temporal test has 0 timestamps
+		}
+	}
+	res := AnalyseClusterPatterns(input)
+
+	// Zone must be skipped (NumZones=0) and temporal must be skipped (no timestamps).
+	if res.ZoneConcentration.NumZones != 0 {
+		t.Skipf("zone ran unexpectedly (NumZones=%d); test precondition unmet", res.ZoneConcentration.NumZones)
+	}
+
+	// With only cascade running (not detected, p=0.5), Fisher uses 1 p-value.
+	// chi² = -2*ln(0.5) = 1.386, df=2, x=0.693
+	// Q(1, 0.693) = e^(-0.693) = 0.5
+	// ConfidenceScore = 1 - 0.5 = 0.5
+	if res.ConfidenceScore < 0.0 || res.ConfidenceScore > 1.0 {
+		t.Errorf("partial p-values: score out of range: %.3f", res.ConfidenceScore)
+	}
+	// The rationale should NOT mention zone or temporal tests.
+	if contains(res.ConfidenceRationale, "zone") || contains(res.ConfidenceRationale, "temporal") {
+		t.Errorf("partial p-values: rationale incorrectly mentions skipped tests: %q", res.ConfidenceRationale)
 	}
 }

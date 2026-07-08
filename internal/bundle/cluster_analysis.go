@@ -52,9 +52,10 @@ type ClusterAnalysisResult struct {
 	ZoneConcentration  ZoneConcentrationResult  `json:"zone_concentration"`
 	TemporalClustering TemporalClusteringResult `json:"temporal_clustering"`
 	CascadeDetected    CascadeResult            `json:"cascade_detected"`
-	PatternSignature   string                   `json:"pattern_signature"`
-	ConfidenceScore    float64                  `json:"confidence_score"`
-	ConfidenceRationale string                  `json:"confidence_rationale,omitempty"`
+	PatternSignature            string  `json:"pattern_signature"`
+	PatternSignatureConfidence  float64 `json:"pattern_signature_confidence"`
+	ConfidenceScore             float64 `json:"confidence_score"`
+	ConfidenceRationale         string  `json:"confidence_rationale,omitempty"`
 }
 
 // ZoneConcentrationResult reports whether anomalies cluster in one service zone.
@@ -140,95 +141,233 @@ func AnalyseClusterPatterns(anomalies []Anomaly) ClusterAnalysisResult {
 	res.ZoneConcentration = testZoneConcentration(anomalies)
 	res.TemporalClustering = testTemporalClustering(anomalies)
 	res.CascadeDetected = testCascade(anomalies)
-	res.PatternSignature = derivePatternSignature(
-		res.ZoneConcentration.Detected,
-		res.TemporalClustering.Detected,
-		res.CascadeDetected.Detected,
-	)
 
-	res.ConfidenceScore, res.ConfidenceRationale = deriveConfidenceScore(
-		res.ZoneConcentration,
-		res.TemporalClustering,
-		res.CascadeDetected,
-		len(anomalies),
+	zone := res.ZoneConcentration.Detected
+	temporal := res.TemporalClustering.Detected
+	cascade := res.CascadeDetected.Detected
+
+	res.PatternSignature = derivePatternSignature(zone, temporal, cascade)
+	res.PatternSignatureConfidence = derivePatternSignatureConfidence(
+		res.PatternSignature, zone, temporal, cascade,
+	)
+	res.ConfidenceScore, res.ConfidenceRationale = computeFisherConfidence(
+		res.ZoneConcentration, res.TemporalClustering, res.CascadeDetected,
 	)
 
 	return res
 }
 
-// deriveConfidenceScore computes a deterministic confidence score in [0, 0.99]
-// and a one-line rationale string from the three test results and anomaly count.
-func deriveConfidenceScore(
+// ─────────────────────────────────────────────────────────────────────────────
+// Pattern signature confidence
+// ─────────────────────────────────────────────────────────────────────────────
+
+// derivePatternSignatureConfidence returns a [0, 1] confidence for how cleanly
+// the observed anomaly signals match the named pattern's expected fingerprint.
+//
+//   ≥ 0.9 — all expected signals present, no contradicting evidence
+//   0.6–0.9 — most expected signals present, some ambiguity
+//   < 0.6  — weak match; multiple candidate patterns possible
+//   0.0    — no pattern detected
+func derivePatternSignatureConfidence(pattern string, zone, temporal, cascade bool) float64 {
+	switch pattern {
+	case "consistent_with_targeted_deletion":
+		// Primary signal: cascade (cross-category receipt overlap). Zone and
+		// temporal strengthen it; each adds corroborating evidence.
+		active := 1 // cascade is always true when this pattern fires
+		if zone {
+			active++
+		}
+		if temporal {
+			active++
+		}
+		switch active {
+		case 3:
+			return 0.93 // all three signals: maximum corroboration
+		case 2:
+			return 0.85 // cascade + one other: strong but not maximal
+		default:
+			return 0.72 // cascade only: pattern identified, fewer signals
+		}
+	case "consistent_with_mass_rekey":
+		if zone && temporal {
+			return 0.90 // both expected signals present
+		}
+		// Temporal only: the expected zone signal is absent; ambiguous with
+		// other causes of a temporal burst.
+		return 0.55
+	case "consistent_with_isolated_corruption":
+		// Zone only, no temporal, no cascade; single signal but unique mapping.
+		return 0.68
+	default:
+		return 0.0 // "nominal": no pattern detected
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fisher's method — overall confidence score
+// ─────────────────────────────────────────────────────────────────────────────
+
+// computeFisherConfidence derives the overall ConfidenceScore via Fisher's
+// method, combining independent p-values from the three statistical tests.
+//
+// Fisher's method: X² = -2 Σ ln(p_i) follows chi²(2k) under the null.
+// ConfidenceScore = 1 − combined_p_value.
+//
+// P-value assignments (only for tests that actually ran):
+//   zone:     PValueLT == "<0.001" → p = 0.001; ran-but-not-detected → p = 0.5.
+//             Excluded entirely when NumZones == 0 (no zone info available).
+//   temporal: PValueLT == "<0.001" → p = 0.001; ran-but-not-detected → p = 0.5.
+//             Excluded entirely when AnomaliesInWindow == 0 and Multiplier == 0
+//             (insufficient timestamps to run the test).
+//   cascade:  Always included. Jaccard ≥ 0.5 → p ≈ 0.01 (honest approximation —
+//             Jaccard is not a true p-value; see inline note). Not-detected → p = 0.5.
+//
+// When fewer than 3 tests produce valid p-values (some tests were not applicable),
+// Fisher's method runs with however many are available; the rationale notes the count.
+func computeFisherConfidence(
 	zone ZoneConcentrationResult,
 	temporal TemporalClusteringResult,
 	cascade CascadeResult,
-	anomalyCount int,
 ) (float64, string) {
-	base := 0.50 // baseline when all tests are inconclusive
+	var pValues []float64
+	var labels []string
+	var nTests int
 
-	// Zone concentration: chi-squared signal → up to +0.20
-	if zone.Detected {
-		base += 0.20
-	} else if zone.ChiSquared > chi2CriticalP001(maxInt(zone.NumZones-1, 1))*0.5 {
-		base += 0.08 // partial signal
-	}
-
-	// Temporal clustering: multiplier signal → up to +0.20
-	if temporal.Detected {
-		base += 0.20
-	} else if temporal.Multiplier >= TemporalMultiplierThreshold*0.5 {
-		base += 0.08 // partial signal
-	}
-
-	// Cascade: Jaccard signal → up to +0.20
-	if cascade.Detected {
-		base += 0.20
-	} else {
-		// partial: any pair with Jaccard > 0.25
-		for _, pair := range cascade.CategoryOverlaps {
-			if pair.Jaccard > 0.25 {
-				base += 0.08
-				break
-			}
+	// zone_concentration — skip entirely when no zone information was available.
+	if zone.NumZones > 0 {
+		nTests++
+		if zone.PValueLT != "" {
+			pValues = append(pValues, 0.001)
+			labels = append(labels, "zone")
+		} else {
+			pValues = append(pValues, 0.5)
 		}
 	}
 
-	// Anomaly count bonus: more anomalies → more statistical power → up to +0.10
-	countBonus := math.Min(0.10, float64(anomalyCount)/500.0*0.10)
-	base += countBonus
+	// temporal_clustering — skip when the test couldn't run (too few timestamps).
+	temporalRan := temporal.AnomaliesInWindow > 0 || temporal.Multiplier > 0 || temporal.Detected
+	if temporalRan {
+		nTests++
+		if temporal.PValueLT != "" {
+			pValues = append(pValues, 0.001)
+			labels = append(labels, "temporal")
+		} else {
+			pValues = append(pValues, 0.5)
+		}
+	}
 
-	score := math.Round(math.Min(base, 0.99)*100) / 100
+	// cascade_detected — always runs; Jaccard is not a p-value so we use an honest
+	// approximation: detected (Jaccard ≥ 0.5) → p ≈ 0.01; not-detected → p ≈ 0.5.
+	nTests++
+	if cascade.Detected {
+		pValues = append(pValues, 0.01)
+		labels = append(labels, "cascade")
+	} else {
+		pValues = append(pValues, 0.5)
+	}
 
-	// Build rationale.
+	combinedP := combinePValuesFisher(pValues)
+	score := math.Round((1.0-combinedP)*1000) / 1000
+	if score > 0.999 {
+		score = 0.999
+	}
+
+	// Rationale: name active tests + confidence tier.
+	nDetected := len(labels)
 	var rationale string
 	switch {
-	case zone.Detected && temporal.Detected && cascade.Detected:
-		rationale = "zone+temporal+cascade detected (high confidence)"
-	case zone.Detected && temporal.Detected:
-		rationale = "zone+temporal detected, cascade absent (high confidence)"
-	case zone.Detected && cascade.Detected:
-		rationale = "zone+cascade detected, temporal absent (high confidence)"
-	case temporal.Detected && cascade.Detected:
-		rationale = "temporal+cascade detected, zone absent (high confidence)"
-	case cascade.Detected:
-		rationale = "cascade detected, zone and temporal absent (moderate confidence)"
-	case zone.Detected && !temporal.Detected:
-		rationale = "zone concentration detected, temporal absent (moderate confidence)"
-	case temporal.Detected && !zone.Detected:
-		rationale = "temporal clustering detected, zone partial (moderate confidence)"
+	case nDetected >= 2:
+		key := ""
+		for i, l := range labels {
+			if i > 0 {
+				key += "+"
+			}
+			key += l
+		}
+		if nTests < 3 {
+			rationale = key + " detected (high confidence, " + itoa(nTests) + " tests)"
+		} else {
+			rationale = key + " detected (high confidence)"
+		}
+	case nDetected == 1:
+		if nTests < 3 {
+			rationale = labels[0] + " detected (moderate confidence, " + itoa(nTests) + " tests)"
+		} else {
+			rationale = labels[0] + " detected (moderate confidence)"
+		}
 	default:
-		rationale = "no patterns detected (low confidence baseline)"
+		rationale = "no patterns detected (low confidence)"
 	}
 
 	return score, rationale
 }
 
-// maxInt returns the larger of a and b.
-func maxInt(a, b int) int {
-	if a > b {
-		return a
+// itoa converts a small non-negative integer to its decimal string.
+// Used to avoid importing strconv for a single call.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
 	}
-	return b
+	b := make([]byte, 0, 4)
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	return string(b)
+}
+
+// combinePValuesFisher combines k independent p-values via Fisher's method.
+// X² = -2 Σ ln(p_i) follows chi²(2k) under the null hypothesis.
+// Returns the combined p-value (lower = stronger evidence against the null).
+func combinePValuesFisher(pvalues []float64) float64 {
+	if len(pvalues) == 0 {
+		return 1.0
+	}
+	chi2 := 0.0
+	for _, p := range pvalues {
+		if p <= 0 {
+			p = 1e-10 // floor: prevent log(0)
+		}
+		if p > 1 {
+			p = 1.0
+		}
+		chi2 += -2.0 * math.Log(p)
+	}
+	df := 2 * len(pvalues)
+	return chi2SurvivalEvenDF(chi2, df)
+}
+
+// chi2SurvivalEvenDF computes P(chi²(df) > chi2Stat) for even df.
+//
+// For even df = 2k the survival function is exact via the Poisson CDF identity:
+//   Q(k, x) = P(Poisson(x) ≤ k−1) = e^(−x) Σ_{i=0}^{k−1} x^i / i!
+// where x = chi2Stat / 2 and k = df / 2.
+//
+// This requires no external library — Go's math package is sufficient.
+// The formula is exact (not an approximation) for all even df.
+func chi2SurvivalEvenDF(chi2Stat float64, df int) float64 {
+	if chi2Stat <= 0 {
+		return 1.0
+	}
+	x := chi2Stat / 2.0
+	k := df / 2
+	expNegX := math.Exp(-x)
+	if expNegX == 0 {
+		return 0.0 // chi2Stat is astronomically large; survival ≈ 0
+	}
+	sum := expNegX // i = 0 term: x^0 / 0! = 1
+	term := expNegX
+	for i := 1; i < k; i++ {
+		term *= x / float64(i)
+		sum += term
+	}
+	if sum < 0 {
+		return 0.0
+	}
+	if sum > 1 {
+		return 1.0
+	}
+	return sum
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
