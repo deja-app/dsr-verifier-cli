@@ -6,7 +6,7 @@
 
 ## Current release
 
-**v1.1.0** — released 2026-06-02
+**v1.1.1** — released 2026-07-08
 
 See the [changelog](#changelog) below for what changed in this release.
 
@@ -102,6 +102,23 @@ major release without a deprecation notice in the release notes.
 ---
 
 ## Changelog
+
+### v1.1.1 (2026-07-08)
+
+**Patch — binary currency fix**
+
+- Rebuilt from current HEAD to include the ExternalDSREnvelope format rewrite
+  (DSR/1.0.2 flat-JSON receipts now parse correctly; v1.1.0 binary predated
+  this change and could not verify current receipts).
+- `--version` output corrected: license updated to `Apache-2.0`, URL updated
+  to `github.com/deja-app/dsr-verifier-cli`.
+- Module path renamed from `github.com/deja-dev` to `github.com/deja-app`
+  across all import paths; `go install github.com/deja-app/dsr-verifier-cli@latest`
+  now resolves correctly.
+- Homebrew tap moved to `deja-app/homebrew-tap`; install command is now
+  `brew install deja-app/tap/dsr-verifier-cli`.
+
+---
 
 ### v1.1.0 (2026-07-08)
 
