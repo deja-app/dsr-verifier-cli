@@ -216,7 +216,7 @@ jobs:
           SHA256_LINUX_AMD64=$(grep  "linux-amd64.tar.gz"  dist/SHA256SUMS | awk '{print $1}')
           SHA256_LINUX_ARM64=$(grep  "linux-arm64.tar.gz"  dist/SHA256SUMS | awk '{print $1}')
 
-          curl -sf -X POST \
+          if ! curl -sf -X POST \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: token ${HOMEBREW_TAP_TOKEN}" \
             "https://api.github.com/repos/deja-app/homebrew-tap/dispatches" \
@@ -229,4 +229,6 @@ jobs:
                 \"sha256_linux_amd64\": \"${SHA256_LINUX_AMD64}\",
                 \"sha256_linux_arm64\": \"${SHA256_LINUX_ARM64}\"
               }
-            }"
+            }"; then
+            echo "WARNING: Homebrew tap dispatch failed (token may need updating in repo secrets). Update the formula manually."
+          fi
