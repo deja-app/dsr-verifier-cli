@@ -25,7 +25,7 @@ issuing organization for their public key file.
 
 **macOS (recommended):**
 ```
-brew install deja-dev/tap/dsr-verifier-cli
+brew install deja-app/tap/dsr-verifier-cli
 ```
 
 **Linux / Windows — direct download:**
@@ -42,7 +42,7 @@ dsr-verifier-cli --version
 You should see something like:
 ```
 dsr-verifier-cli v1.0.0 (commit: a3f8c2e)
-DSR/1.0.1 · MIT License · https://github.com/deja-dev/dsr-verifier-cli
+DSR/1.0.1 · MIT License · https://github.com/deja-app/dsr-verifier-cli
 Offline · zero network calls
 ```
 

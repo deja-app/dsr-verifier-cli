@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deja-dev/dsr-verifier-cli/internal/bundle"
-	"github.com/deja-dev/dsr-verifier-cli/internal/cli"
+	"github.com/deja-app/dsr-verifier-cli/internal/bundle"
+	"github.com/deja-app/dsr-verifier-cli/internal/cli"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

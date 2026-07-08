@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/deja-dev/dsr-verifier-cli/internal/dsr"
-	dsrerrors "github.com/deja-dev/dsr-verifier-cli/internal/errors"
+	"github.com/deja-app/dsr-verifier-cli/internal/dsr"
+	dsrerrors "github.com/deja-app/dsr-verifier-cli/internal/errors"
 )
 
 // Bundle holds the fully-parsed contents of a .dsr.bundle file.

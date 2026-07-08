@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/deja-dev/dsr-verifier-cli/internal/bundle"
-	dsrerrors "github.com/deja-dev/dsr-verifier-cli/internal/errors"
+	"github.com/deja-app/dsr-verifier-cli/internal/bundle"
+	dsrerrors "github.com/deja-app/dsr-verifier-cli/internal/errors"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deja-dev/dsr-verifier-cli/internal/dsr"
-	"github.com/deja-dev/dsr-verifier-cli/internal/verify"
+	"github.com/deja-app/dsr-verifier-cli/internal/dsr"
+	"github.com/deja-app/dsr-verifier-cli/internal/verify"
 )
 
 // verifyOpts holds parsed flags for the verify command.

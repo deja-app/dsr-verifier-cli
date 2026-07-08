@@ -53,7 +53,7 @@ jobs:
           go build \
             -trimpath \
             -buildvcs=false \
-            -ldflags="-s -w -X github.com/deja-dev/dsr-verifier-cli/internal/cli.BuildCommit=$(git rev-parse --short HEAD)" \
+            -ldflags="-s -w -X github.com/deja-app/dsr-verifier-cli/internal/cli.BuildCommit=$(git rev-parse --short HEAD)" \
             ./cmd/dsr-verifier-cli
 
   cross-compile:
@@ -91,6 +91,6 @@ jobs:
           go build \
             -trimpath \
             -buildvcs=false \
-            -ldflags="-s -w -X github.com/deja-dev/dsr-verifier-cli/internal/cli.BuildCommit=$(git rev-parse --short HEAD)" \
+            -ldflags="-s -w -X github.com/deja-app/dsr-verifier-cli/internal/cli.BuildCommit=$(git rev-parse --short HEAD)" \
             -o "dsr-verifier-cli${EXT}" \
             ./cmd/dsr-verifier-cli

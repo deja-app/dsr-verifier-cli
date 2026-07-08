@@ -25,7 +25,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/deja-dev/dsr-verifier-cli/internal/dsr"
+	"github.com/deja-app/dsr-verifier-cli/internal/dsr"
 )
 
 const keyID = "deja-managed-v1"

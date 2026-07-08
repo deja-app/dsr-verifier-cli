@@ -125,7 +125,7 @@ CLI will not flag it — that is a scope review for the auditor.
 
 ## Why the source is open
 
-The source code is published at `github.com/deja-dev/dsr-verifier-cli`
+The source code is published at `github.com/deja-app/dsr-verifier-cli`
 under the MIT License. This is intentional and load-bearing:
 
 - **Auditors can read the code.** If your firm's security team wants to

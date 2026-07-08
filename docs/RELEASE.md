@@ -73,7 +73,7 @@ This triggers the GitHub Actions release pipeline automatically.
 
 ## Step 3: Watch the pipeline
 
-Monitor at: `https://github.com/deja-dev/dsr-verifier-cli/actions`
+Monitor at: `https://github.com/deja-app/dsr-verifier-cli/actions`
 
 The pipeline runs in three stages:
 1. **Test** (~1 min) — full test suite on the pinned toolchain
@@ -98,14 +98,14 @@ After the pipeline completes, verify:
 VERSION=v1.0.1
 
 # Download the checksums and signature
-curl -LO "https://github.com/deja-dev/dsr-verifier-cli/releases/download/${VERSION}/SHA256SUMS"
-curl -LO "https://github.com/deja-dev/dsr-verifier-cli/releases/download/${VERSION}/SHA256SUMS.asc"
+curl -LO "https://github.com/deja-app/dsr-verifier-cli/releases/download/${VERSION}/SHA256SUMS"
+curl -LO "https://github.com/deja-app/dsr-verifier-cli/releases/download/${VERSION}/SHA256SUMS.asc"
 
 # Verify GPG signature
 gpg --verify SHA256SUMS.asc SHA256SUMS
 
 # Download one binary and verify its checksum
-curl -LO "https://github.com/deja-dev/dsr-verifier-cli/releases/download/${VERSION}/dsr-verifier-cli-${VERSION}-linux-amd64.tar.gz"
+curl -LO "https://github.com/deja-app/dsr-verifier-cli/releases/download/${VERSION}/dsr-verifier-cli-${VERSION}-linux-amd64.tar.gz"
 sha256sum --check --ignore-missing SHA256SUMS
 
 # Extract and run
@@ -118,11 +118,11 @@ tar -xzf "dsr-verifier-cli-${VERSION}-linux-amd64.tar.gz"
 ## Step 5: Verify the Homebrew tap updated
 
 The release pipeline dispatches an update event to the
-`deja-dev/homebrew-tap` repository. Confirm the formula was updated:
+`deja-app/homebrew-tap` repository. Confirm the formula was updated:
 
 ```bash
 # Check that the tap repo has a new commit
-gh api repos/deja-dev/homebrew-tap/commits/main \
+gh api repos/deja-app/homebrew-tap/commits/main \
   --jq '.commit.message'
 
 # Should show something like: "chore: bump dsr-verifier-cli to v1.0.1"
@@ -131,7 +131,7 @@ gh api repos/deja-dev/homebrew-tap/commits/main \
 Test the Homebrew install in a clean environment:
 ```bash
 brew uninstall dsr-verifier-cli 2>/dev/null || true
-brew install deja-dev/tap/dsr-verifier-cli
+brew install deja-app/tap/dsr-verifier-cli
 dsr-verifier-cli --version
 ```
 
@@ -167,7 +167,7 @@ is published at `https://deja.dev/release-key.asc` and on public keyservers.
 
 ## Homebrew tap structure
 
-The `deja-dev/homebrew-tap` repository must contain:
+The `deja-app/homebrew-tap` repository must contain:
 - `Formula/dsr-verifier-cli.rb` — the formula (see `homebrew/dsr-verifier-cli.rb` in this repo for the template)
 - `.github/workflows/update-formula.yml` — the workflow that receives the `new-release` dispatch and commits the updated formula (see `homebrew/tap-update-workflow.yml` in this repo for the reference implementation)
 

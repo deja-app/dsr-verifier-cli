@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/deja-dev/dsr-verifier-cli/internal/dsr"
+	"github.com/deja-app/dsr-verifier-cli/internal/dsr"
 )
 
 // infoOpts holds parsed flags for the info command.

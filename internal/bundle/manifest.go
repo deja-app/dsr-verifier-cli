@@ -18,7 +18,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/deja-dev/dsr-verifier-cli/internal/dsr"
+	"github.com/deja-app/dsr-verifier-cli/internal/dsr"
 )
 
 // BundleFormat is the only manifest format version this verifier accepts.

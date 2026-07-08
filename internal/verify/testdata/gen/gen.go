@@ -68,7 +68,7 @@ func main() {
 
 // sharedReceiptFields returns the fields common to both fixture receipts.
 func sharedReceiptFields(algo, keyID string) (content json.RawMessage, contentHash string, issuedAt time.Time) {
-	content = json.RawMessage(`{"commit_sha":"fixture000000000000000000000000000000000000","merged_at":"2026-05-01T00:00:00Z","pr_url":"github.com/deja-dev/example#1"}`)
+	content = json.RawMessage(`{"commit_sha":"fixture000000000000000000000000000000000000","merged_at":"2026-05-01T00:00:00Z","pr_url":"github.com/deja-app/example#1"}`)
 	sum := sha256.Sum256(content)
 	contentHash = hex.EncodeToString(sum[:])
 	issuedAt = time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)

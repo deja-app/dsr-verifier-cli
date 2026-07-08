@@ -7,7 +7,7 @@ const Version = "1.1.0"
 
 // BuildCommit is injected at link time:
 //
-//	go build -ldflags "-X github.com/deja-dev/dsr-verifier-cli/internal/cli.BuildCommit=$(git rev-parse --short HEAD)"
+//	go build -ldflags "-X github.com/deja-app/dsr-verifier-cli/internal/cli.BuildCommit=$(git rev-parse --short HEAD)"
 //
 // It defaults to "dev" when built without ldflags (e.g. in tests).
 var BuildCommit = "dev"

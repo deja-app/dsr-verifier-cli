@@ -78,7 +78,7 @@ output:
 
 ```
 dsr-verifier-cli v1.1.0 (commit: <git-sha>)
-DSR/1.0.1 · MIT License · https://github.com/deja-dev/dsr-verifier-cli
+DSR/1.0.1 · MIT License · https://github.com/deja-app/dsr-verifier-cli
 ```
 
 When a new DSR format version is released (e.g., DSR/2.0.0), support for it will

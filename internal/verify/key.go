@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"strings"
 
-	dsrerrors "github.com/deja-dev/dsr-verifier-cli/internal/errors"
+	dsrerrors "github.com/deja-app/dsr-verifier-cli/internal/errors"
 )
 
 // PublicKeyWithID bundles a parsed public key with the optional key_id extracted

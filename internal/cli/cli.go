@@ -38,7 +38,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runInfo(args[1:], stdout, stderr)
 	case "--version", "-version", "version":
 		fmt.Fprintf(stdout, "dsr-verifier-cli v%s (commit: %s)\n", Version, BuildCommit)
-		fmt.Fprintln(stdout, "DSR/1.0.2 · Apache-2.0 · https://github.com/deja-dev/dsr-verifier-cli")
+		fmt.Fprintln(stdout, "DSR/1.0.2 · Apache-2.0 · https://github.com/deja-app/dsr-verifier-cli")
 		fmt.Fprintln(stdout, "Offline · zero network calls")
 		return exitSuccess
 	case "--help", "-help", "-h", "help":

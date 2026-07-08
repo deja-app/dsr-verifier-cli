@@ -12,7 +12,7 @@ who want to understand what cryptographic code the CLI runs and why.
 contains only the Go version pin; `go.sum` is empty.
 
 ```
-module github.com/deja-dev/dsr-verifier-cli
+module github.com/deja-app/dsr-verifier-cli
 go 1.22.3
 ```
 

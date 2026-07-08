@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/deja-dev/dsr-verifier-cli/internal/verify"
-	dsrerrors "github.com/deja-dev/dsr-verifier-cli/internal/errors"
+	"github.com/deja-app/dsr-verifier-cli/internal/verify"
+	dsrerrors "github.com/deja-app/dsr-verifier-cli/internal/errors"
 )
 
 // VerifyResults aggregates the output of all verification checks plus

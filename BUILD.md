@@ -28,7 +28,7 @@ go version
 ## Quick build (local, no Docker)
 
 ```bash
-git clone https://github.com/deja-dev/dsr-verifier-cli.git
+git clone https://github.com/deja-app/dsr-verifier-cli.git
 cd dsr-verifier-cli
 git checkout v1.0.0          # replace with the tag you are verifying
 
@@ -37,7 +37,7 @@ COMMIT=$(git rev-parse --short HEAD)
 CGO_ENABLED=0 go build \
   -trimpath \
   -buildvcs=false \
-  -ldflags="-s -w -X github.com/deja-dev/dsr-verifier-cli/internal/cli.BuildCommit=${COMMIT}" \
+  -ldflags="-s -w -X github.com/deja-app/dsr-verifier-cli/internal/cli.BuildCommit=${COMMIT}" \
   -o dsr-verifier-cli \
   ./cmd/dsr-verifier-cli
 ```
@@ -75,7 +75,7 @@ for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64; d
   go build \
     -trimpath \
     -buildvcs=false \
-    -ldflags="-s -w -X github.com/deja-dev/dsr-verifier-cli/internal/cli.BuildCommit=${COMMIT}" \
+    -ldflags="-s -w -X github.com/deja-app/dsr-verifier-cli/internal/cli.BuildCommit=${COMMIT}" \
     -o "dist/dsr-verifier-cli-${VERSION}-${GOOS}-${GOARCH}${EXT}" \
     ./cmd/dsr-verifier-cli
 done
@@ -106,7 +106,7 @@ docker run --rm \
     go build \
       -trimpath \
       -buildvcs=false \
-      -ldflags="-s -w -X github.com/deja-dev/dsr-verifier-cli/internal/cli.BuildCommit=${COMMIT}" \
+      -ldflags="-s -w -X github.com/deja-app/dsr-verifier-cli/internal/cli.BuildCommit=${COMMIT}" \
       -o /tmp/dsr-verifier-cli-out \
       ./cmd/dsr-verifier-cli
     cp /tmp/dsr-verifier-cli-out /src/dsr-verifier-cli-${GOOS}-${GOARCH}
@@ -122,8 +122,8 @@ Download the `SHA256SUMS` and `SHA256SUMS.asc` files from the GitHub Release:
 ```bash
 VERSION=v1.0.0
 
-curl -LO "https://github.com/deja-dev/dsr-verifier-cli/releases/download/${VERSION}/SHA256SUMS"
-curl -LO "https://github.com/deja-dev/dsr-verifier-cli/releases/download/${VERSION}/SHA256SUMS.asc"
+curl -LO "https://github.com/deja-app/dsr-verifier-cli/releases/download/${VERSION}/SHA256SUMS"
+curl -LO "https://github.com/deja-app/dsr-verifier-cli/releases/download/${VERSION}/SHA256SUMS.asc"
 ```
 
 Verify the GPG signature on `SHA256SUMS`:

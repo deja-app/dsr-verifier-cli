@@ -3,14 +3,14 @@
 // Build with reproducible flags:
 //
 //	go build -trimpath -buildvcs=false \
-//	  -ldflags "-X github.com/deja-dev/dsr-verifier-cli/internal/cli.BuildCommit=$(git rev-parse --short HEAD)" \
+//	  -ldflags "-X github.com/deja-app/dsr-verifier-cli/internal/cli.BuildCommit=$(git rev-parse --short HEAD)" \
 //	  ./cmd/dsr-verifier-cli
 package main
 
 import (
 	"os"
 
-	"github.com/deja-dev/dsr-verifier-cli/internal/cli"
+	"github.com/deja-app/dsr-verifier-cli/internal/cli"
 )
 
 func main() {

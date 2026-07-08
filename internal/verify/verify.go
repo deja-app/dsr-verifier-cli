@@ -23,8 +23,8 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/deja-dev/dsr-verifier-cli/internal/dsr"
-	dsrerrors "github.com/deja-dev/dsr-verifier-cli/internal/errors"
+	"github.com/deja-app/dsr-verifier-cli/internal/dsr"
+	dsrerrors "github.com/deja-app/dsr-verifier-cli/internal/errors"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

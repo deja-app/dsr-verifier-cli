@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	dsrerrors "github.com/deja-dev/dsr-verifier-cli/internal/errors"
+	dsrerrors "github.com/deja-app/dsr-verifier-cli/internal/errors"
 )
 
 // Parse parses a DSR receipt from raw JSON bytes into an Envelope.
