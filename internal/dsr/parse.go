@@ -49,8 +49,13 @@ func validateEnvelope(e *Envelope) *dsrerrors.VerificationError {
 	if e.ReceiptID == "" {
 		missing = append(missing, "receipt_id")
 	}
-	if e.VaultID == "" {
+	// RG governance receipts are org-scoped and carry organization_id instead
+	// of vault_id. All other types require vault_id.
+	if e.VaultID == "" && !IsGovernanceType(e.Type) {
 		missing = append(missing, "vault_id")
+	}
+	if IsGovernanceType(e.Type) && e.OrganizationID == "" {
+		missing = append(missing, "organization_id")
 	}
 	if e.Timestamp == "" {
 		missing = append(missing, "timestamp")

@@ -45,6 +45,7 @@ type Envelope struct {
 	Type                 string      `json:"type"`
 	ReceiptID            string      `json:"receipt_id"`
 	VaultID              string      `json:"vault_id"`
+	OrganizationID       string      `json:"organization_id"` // RG receipts: org-scoped, no vault_id
 	Timestamp            string      `json:"timestamp"`
 	Actor                string      `json:"actor"`
 	Origin               string      `json:"origin"`
@@ -69,7 +70,16 @@ type Envelope struct {
 	IsInternalValidation *bool       `json:"is_internal_validation"`
 	IsTrial              *bool       `json:"is_trial"`
 	IssuedAt             *string     `json:"issued_at"`
+	// AnchoringBasis ("deploy"|"merge") sorts before ccs_score; omit-null.
+	AnchoringBasis       *string     `json:"anchoring_basis"`
+	// TemporalBasis ("deployed"|"merged_fallback") sorts after signing_algorithm; omit-null.
+	TemporalBasis        *string     `json:"temporal_basis"`
 	CCSFactors           *CCSFactors `json:"ccs_factors"`
+
+	// Governance fields (RG) — org-scoped, no vault_id
+	ChangeType     *string `json:"change_type"`
+	PriorStateHash *string `json:"prior_state_hash"`
+	NewStateHash   *string `json:"new_state_hash"`
 
 	// Resolution fields (R2, R2-F, R2-R)
 	AttributionReceiptID *string `json:"attribution_receipt_id"`
@@ -127,4 +137,12 @@ func IsAttributionType(t string) bool {
 // IsResolutionType reports whether t is R2, R2-F, or R2-R.
 func IsResolutionType(t string) bool {
 	return t == TypeR2 || t == TypeR2F || t == TypeR2R
+}
+
+// IsGovernanceType reports whether t is RG.
+// RG receipts are org-scoped (no vault_id) and use the 9-field governance
+// canonical form: actor, change_type, issued_at, new_state_hash,
+// organization_id, prior_state_hash, receipt_id, type, version.
+func IsGovernanceType(t string) bool {
+	return t == TypeRG
 }

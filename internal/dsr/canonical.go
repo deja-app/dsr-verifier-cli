@@ -23,6 +23,8 @@ func CanonicalPayload(e *Envelope) (string, error) {
 		return attributionCanonical(e)
 	case IsResolutionType(e.Type):
 		return resolutionCanonical(e)
+	case IsGovernanceType(e.Type):
+		return governanceCanonical(e)
 	default:
 		return otherCanonical(e)
 	}
@@ -58,6 +60,11 @@ func attributionCanonical(e *Envelope) (string, error) {
 	}
 
 	// Conditional fields: include only when non-null in the envelope.
+	// Sort order (alphabetical by canonical key name):
+	//   anchoring_basis < ccs_score < ... < signing_algorithm < signing_key_id < temporal_basis
+	if e.AnchoringBasis != nil {
+		m["anchoring_basis"] = *e.AnchoringBasis
+	}
 	if e.ProducerGraphScore != nil {
 		m["producer_graph_score"] = *e.ProducerGraphScore
 	}
@@ -80,6 +87,9 @@ func attributionCanonical(e *Envelope) (string, error) {
 	// the envelope's "signature_algorithm" field (different name, same value).
 	if e.SignatureAlgorithm != nil {
 		m["signing_algorithm"] = *e.SignatureAlgorithm
+	}
+	if e.TemporalBasis != nil {
+		m["temporal_basis"] = *e.TemporalBasis
 	}
 
 	return jcsSerialise(m)
@@ -129,6 +139,49 @@ func resolutionCanonical(e *Envelope) (string, error) {
 		m["signing_algorithm"] = *e.SignatureAlgorithm
 	}
 
+	return jcsSerialise(m)
+}
+
+// governanceCanonical builds the 9-field canonical form for RG receipts.
+//
+// Canonical field order (Unicode sort):
+//
+//	actor, change_type, issued_at, new_state_hash, organization_id,
+//	prior_state_hash, receipt_id, type, version
+//
+// RG receipts are signed over organization_id (not vault_id) and use
+// issued_at (not timestamp). The signature is SHA-256-hex of this payload.
+// prior_hash is storage-level chain linkage and is NOT part of the signed form.
+func governanceCanonical(e *Envelope) (string, error) {
+	if e.ChangeType == nil {
+		return "", fmt.Errorf("governance receipt missing change_type")
+	}
+	if e.PriorStateHash == nil {
+		return "", fmt.Errorf("governance receipt missing prior_state_hash")
+	}
+	if e.NewStateHash == nil {
+		return "", fmt.Errorf("governance receipt missing new_state_hash")
+	}
+
+	// issued_at: use explicit field when present; fall back to timestamp.
+	var issuedAt string
+	if e.IssuedAt != nil {
+		issuedAt = *e.IssuedAt
+	} else {
+		issuedAt = e.Timestamp
+	}
+
+	m := map[string]any{
+		"actor":            e.Actor,
+		"change_type":      *e.ChangeType,
+		"issued_at":        issuedAt,
+		"new_state_hash":   *e.NewStateHash,
+		"organization_id":  e.OrganizationID,
+		"prior_state_hash": *e.PriorStateHash,
+		"receipt_id":       e.ReceiptID,
+		"type":             e.Type,
+		"version":          e.DSRVersion,
+	}
 	return jcsSerialise(m)
 }
 
