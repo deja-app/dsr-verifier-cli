@@ -311,10 +311,12 @@ func TestGolden_R1_ExcludesVaultID(t *testing.T) {
 
 // ─── R1-N no-attribution canonical ────────────────────────────────────────────
 //
-// Three vectors, one per DSR version:
-//   DSR/1.0   — non-null incident_id, no is_synthetic
-//   DSR/1.0.2 — non-null incident_id, is_synthetic=true
-//   DSR/1.0.3 — null incident_id (field omitted from canonical form)
+// All R1-N receipts use DSR/1.0.3. The issuer collapsed to a single version
+// string because zero R1-N receipts exist in prod — no backward-compat obligation.
+// Three vectors covering the three field combinations:
+//   DSR/1.0.3 — non-null incident_id, no is_synthetic      (baseline)
+//   DSR/1.0.3 — non-null incident_id, is_synthetic=true    (wizard test-signal)
+//   DSR/1.0.3 — null incident_id (field omitted)           (Sentry-triggered)
 //
 // These are cross-checked byte-for-byte against the TypeScript implementation
 // in packages/api/src/utils/__tests__/canonical-golden-vectors.test.ts.
@@ -342,11 +344,11 @@ func r1nBaseEnvelope() *dsr.Envelope {
 	}
 }
 
-func TestGolden_R1N_DSR10_CanonicalBytes(t *testing.T) {
-	// DSR/1.0 baseline: non-null incident_id, no is_synthetic.
-	// Proves pre-1.0.3 receipts (always non-null incident_id) are byte-compatible.
+func TestGolden_R1N_DSR103_WithID_CanonicalBytes(t *testing.T) {
+	// DSR/1.0.3 baseline: non-null incident_id, no is_synthetic.
+	// Version collapsed: issuer always emits DSR/1.0.3 (zero prod R1-N receipts).
 	e := r1nBaseEnvelope()
-	e.DSRVersion = "DSR/1.0"
+	e.DSRVersion = "DSR/1.0.3"
 	e.ReceiptID = "R1N-V1-BASELINE"
 	incidentID := "sentry:V1-BASELINE"
 	e.IncidentID = &incidentID
@@ -361,20 +363,20 @@ func TestGolden_R1N_DSR10_CanonicalBytes(t *testing.T) {
 	want := `{"highest_candidate_ccs":"0.000","incident_id":"sentry:V1-BASELINE",` +
 		`"issued_at":"2026-07-16T00:00:00.000Z","lookback_days":30,"prs_evaluated":0,` +
 		`"receipt_id":"R1N-V1-BASELINE","service_zone":"deja-test-zone",` +
-		`"type":"R1-N","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0"}`
+		`"type":"R1-N","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0.3"}`
 	if canonical != want {
 		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
 	}
-	const wantHash = "b0a0bbe96916acfce29dfe476623f6bb02c5d27f9e73b8bff7d6762417425e7b"
+	const wantHash = "1a8c85a06d540df245e663036d1a8c2d9e9427cdfe9a76efa9ab69c7d9019b62"
 	if got := sha256Hex(canonical); got != wantHash {
 		t.Errorf("SHA-256\n got: %s\nwant: %s", got, wantHash)
 	}
 }
 
-func TestGolden_R1N_DSR102_CanonicalBytes(t *testing.T) {
-	// DSR/1.0.2: non-null incident_id + is_synthetic=true.
+func TestGolden_R1N_DSR103_Synthetic_CanonicalBytes(t *testing.T) {
+	// DSR/1.0.3: non-null incident_id + is_synthetic=true (wizard test-signal).
 	e := r1nBaseEnvelope()
-	e.DSRVersion = "DSR/1.0.2"
+	e.DSRVersion = "DSR/1.0.3"
 	e.ReceiptID = "R1N-V1-0-2"
 	incidentID := "sentry:V1-0-2"
 	e.IncidentID = &incidentID
@@ -391,11 +393,11 @@ func TestGolden_R1N_DSR102_CanonicalBytes(t *testing.T) {
 	want := `{"highest_candidate_ccs":"0.000","incident_id":"sentry:V1-0-2",` +
 		`"is_synthetic":true,"issued_at":"2026-07-16T00:00:00.000Z","lookback_days":30,` +
 		`"prs_evaluated":0,"receipt_id":"R1N-V1-0-2","service_zone":"deja-test-zone",` +
-		`"type":"R1-N","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0.2"}`
+		`"type":"R1-N","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0.3"}`
 	if canonical != want {
 		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
 	}
-	const wantHash = "21d7b5c3f6a2c09f6591d29bee729149ce1e86789bee7b392db44706c1d354a5"
+	const wantHash = "5e978f5f579e4dcb856e07e345b377d747b904a063326c185b10447b302bdc0b"
 	if got := sha256Hex(canonical); got != wantHash {
 		t.Errorf("SHA-256\n got: %s\nwant: %s", got, wantHash)
 	}
