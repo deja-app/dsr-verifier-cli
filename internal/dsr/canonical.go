@@ -19,6 +19,14 @@ import (
 // or float values with ECMA-262 vs strconv divergence.
 func CanonicalPayload(e *Envelope) (string, error) {
 	switch {
+	case e.Type == TypeR1N:
+		// R1-N has a distinct canonical form from R1/R1-L: no repository/pr_number,
+		// carries highest_candidate_ccs, lookback_days, prs_evaluated, receipt_id.
+		return noAttributionCanonical(e)
+	case e.Type == TypeRV:
+		// RV has a 13-field form including a checks_passed array; it never falls
+		// to otherCanonical (which only carries 6 fields and would misverify).
+		return rvCanonical(e)
 	case IsAttributionType(e.Type):
 		return attributionCanonical(e)
 	case IsResolutionType(e.Type):
@@ -197,6 +205,105 @@ func otherCanonical(e *Envelope) (string, error) {
 	return jcsSerialise(m)
 }
 
+// rvCanonical builds the 13-field canonical form for RV (verification run) receipts.
+//
+// Field order (Unicode sort):
+//
+//	checks_passed, failed_check_type, failure_reason, issued_at, receipt_id,
+//	receipts_attested_count, rv_type, vault_id, verification_completed_at,
+//	verification_mode, verification_result, verification_run_id, verification_started_at
+//
+// checks_passed is a JSON array of strings (sorted within the array as received;
+// no re-sorting — the issuer preserves insertion order, which is the check execution order).
+// failed_check_type and failure_reason are null on passing runs.
+//
+// issued_at: uses the explicit IssuedAt field; falls back to Timestamp.
+func rvCanonical(e *Envelope) (string, error) {
+	var issuedAt string
+	if e.IssuedAt != nil {
+		issuedAt = *e.IssuedAt
+	} else {
+		issuedAt = e.Timestamp
+	}
+	var attested int64
+	if e.ReceiptsAttestedCount != nil {
+		attested = *e.ReceiptsAttestedCount
+	}
+	// checks_passed: nil slice serialises as empty array in JSON; preserve as-is.
+	checks := e.ChecksPassed
+	if checks == nil {
+		checks = []string{}
+	}
+	m := map[string]any{
+		"checks_passed":             checks,
+		"failed_check_type":         anyNullableStr(e.FailedCheckType),
+		"failure_reason":            anyNullableStr(e.FailureReason),
+		"issued_at":                 issuedAt,
+		"receipt_id":                e.ReceiptID,
+		"receipts_attested_count":   attested,
+		"rv_type":                   strDeref(e.RVType, ""),
+		"vault_id":                  e.VaultID,
+		"verification_completed_at": strDeref(e.VerificationCompletedAt, ""),
+		"verification_mode":         strDeref(e.VerificationMode, ""),
+		"verification_result":       strDeref(e.VerificationResult, ""),
+		"verification_run_id":       strDeref(e.VerificationRunID, ""),
+		"verification_started_at":   strDeref(e.VerificationStartedAt, ""),
+	}
+	return jcsSerialise(m)
+}
+
+// noAttributionCanonical builds the canonical form for R1-N (no-attribution) receipts.
+//
+// Field order (base set, sorted alphabetically):
+//
+//	highest_candidate_ccs, [incident_id], [is_synthetic], issued_at,
+//	lookback_days, prs_evaluated, receipt_id, service_zone, type, vault_id, version
+//
+// incident_id is omitted when null (DSR/1.0.3+). Pre-1.0.3 receipts always
+// have a non-null incident_id and their canonical bytes are unchanged.
+// is_synthetic is omitted when not set (DSR/1.0.1+ pattern).
+//
+// issued_at comes from the explicit IssuedAt field; fall back to Timestamp.
+func noAttributionCanonical(e *Envelope) (string, error) {
+	var issuedAt string
+	if e.IssuedAt != nil {
+		issuedAt = *e.IssuedAt
+	} else {
+		issuedAt = e.Timestamp
+	}
+
+	highest := strDeref(e.HighestCandidateCcs, "0.000")
+	var lookback int64
+	if e.LookbackDays != nil {
+		lookback = *e.LookbackDays
+	}
+	var prsEval int64
+	if e.PrsEvaluated != nil {
+		prsEval = *e.PrsEvaluated
+	}
+
+	m := map[string]any{
+		"highest_candidate_ccs": highest,
+		"issued_at":             issuedAt,
+		"lookback_days":         lookback,
+		"prs_evaluated":         prsEval,
+		"receipt_id":            e.ReceiptID,
+		"service_zone":          strDeref(e.ServiceZone, ""),
+		"type":                  e.Type,
+		"vault_id":              e.VaultID,
+		"version":               e.DSRVersion,
+	}
+	// DSR/1.0.3: omit incident_id when null so pre-1.0.3 receipts (always non-null) stay valid.
+	if e.IncidentID != nil {
+		m["incident_id"] = *e.IncidentID
+	}
+	// DSR/1.0.1+: only included when set — backward compatible with pre-1.0.1 receipts.
+	if e.IsSynthetic != nil {
+		m["is_synthetic"] = *e.IsSynthetic
+	}
+	return jcsSerialise(m)
+}
+
 // jcsSerialise produces a compact JSON string for a flat map following RFC 8785
 // (JCS) for the value types present in DSR receipt canonical forms:
 //
@@ -240,6 +347,17 @@ func jcsSerialise(m map[string]any) (string, error) {
 		case string:
 			vb, _ := json.Marshal(val)
 			sb.Write(vb)
+		case []string:
+			// Array of strings — used by RV checks_passed field.
+			sb.WriteByte('[')
+			for i, s := range val {
+				if i > 0 {
+					sb.WriteByte(',')
+				}
+				vb, _ := json.Marshal(s)
+				sb.Write(vb)
+			}
+			sb.WriteByte(']')
 		default:
 			return "", fmt.Errorf("canonical: unsupported value type %T for key %q", m[k], k)
 		}

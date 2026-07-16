@@ -309,6 +309,143 @@ func TestGolden_R1_ExcludesVaultID(t *testing.T) {
 	}
 }
 
+// ─── R1-N no-attribution canonical ────────────────────────────────────────────
+//
+// Three vectors, one per DSR version:
+//   DSR/1.0   — non-null incident_id, no is_synthetic
+//   DSR/1.0.2 — non-null incident_id, is_synthetic=true
+//   DSR/1.0.3 — null incident_id (field omitted from canonical form)
+//
+// These are cross-checked byte-for-byte against the TypeScript implementation
+// in packages/api/src/utils/__tests__/canonical-golden-vectors.test.ts.
+
+func r1nBaseEnvelope() *dsr.Envelope {
+	issuedAt := "2026-07-16T00:00:00.000Z"
+	lookback := int64(30)
+	prsEval := int64(0)
+	highest := "0.000"
+	zone := "deja-test-zone"
+	vault := "00000000-0000-0000-0000-000000000001"
+	return &dsr.Envelope{
+		DSRVersion:          "DSR/1.0",
+		Type:                dsr.TypeR1N,
+		VaultID:             vault,
+		Timestamp:           issuedAt,
+		Actor:               "system:sde",
+		Origin:              "production",
+		Signature:           "placeholder",
+		IssuedAt:            &issuedAt,
+		HighestCandidateCcs: &highest,
+		LookbackDays:        &lookback,
+		PrsEvaluated:        &prsEval,
+		ServiceZone:         &zone,
+	}
+}
+
+func TestGolden_R1N_DSR10_CanonicalBytes(t *testing.T) {
+	// DSR/1.0 baseline: non-null incident_id, no is_synthetic.
+	// Proves pre-1.0.3 receipts (always non-null incident_id) are byte-compatible.
+	e := r1nBaseEnvelope()
+	e.DSRVersion = "DSR/1.0"
+	e.ReceiptID = "R1N-V1-BASELINE"
+	incidentID := "sentry:V1-BASELINE"
+	e.IncidentID = &incidentID
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+
+	// Field order: highest_candidate_ccs, incident_id, issued_at, lookback_days,
+	//              prs_evaluated, receipt_id, service_zone, type, vault_id, version
+	want := `{"highest_candidate_ccs":"0.000","incident_id":"sentry:V1-BASELINE",` +
+		`"issued_at":"2026-07-16T00:00:00.000Z","lookback_days":30,"prs_evaluated":0,` +
+		`"receipt_id":"R1N-V1-BASELINE","service_zone":"deja-test-zone",` +
+		`"type":"R1-N","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0"}`
+	if canonical != want {
+		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+	const wantHash = "b0a0bbe96916acfce29dfe476623f6bb02c5d27f9e73b8bff7d6762417425e7b"
+	if got := sha256Hex(canonical); got != wantHash {
+		t.Errorf("SHA-256\n got: %s\nwant: %s", got, wantHash)
+	}
+}
+
+func TestGolden_R1N_DSR102_CanonicalBytes(t *testing.T) {
+	// DSR/1.0.2: non-null incident_id + is_synthetic=true.
+	e := r1nBaseEnvelope()
+	e.DSRVersion = "DSR/1.0.2"
+	e.ReceiptID = "R1N-V1-0-2"
+	incidentID := "sentry:V1-0-2"
+	e.IncidentID = &incidentID
+	isSynthetic := true
+	e.IsSynthetic = &isSynthetic
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+
+	// Field order: highest_candidate_ccs, incident_id, is_synthetic, issued_at,
+	//              lookback_days, prs_evaluated, receipt_id, service_zone, type, vault_id, version
+	want := `{"highest_candidate_ccs":"0.000","incident_id":"sentry:V1-0-2",` +
+		`"is_synthetic":true,"issued_at":"2026-07-16T00:00:00.000Z","lookback_days":30,` +
+		`"prs_evaluated":0,"receipt_id":"R1N-V1-0-2","service_zone":"deja-test-zone",` +
+		`"type":"R1-N","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0.2"}`
+	if canonical != want {
+		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+	const wantHash = "21d7b5c3f6a2c09f6591d29bee729149ce1e86789bee7b392db44706c1d354a5"
+	if got := sha256Hex(canonical); got != wantHash {
+		t.Errorf("SHA-256\n got: %s\nwant: %s", got, wantHash)
+	}
+}
+
+func TestGolden_R1N_DSR103_CanonicalBytes(t *testing.T) {
+	// DSR/1.0.3: null incident_id — field omitted from canonical form entirely.
+	// This is the common path for Sentry-triggered phase-2 runs with no stable issue ID.
+	e := r1nBaseEnvelope()
+	e.DSRVersion = "DSR/1.0.3"
+	e.ReceiptID = "R1N-V1-0-3"
+	// IncidentID left nil — omitted from canonical form
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+
+	// Field order: highest_candidate_ccs, issued_at, lookback_days, prs_evaluated,
+	//              receipt_id, service_zone, type, vault_id, version
+	// Note: incident_id is absent (null → omitted, not included as JSON null).
+	want := `{"highest_candidate_ccs":"0.000","issued_at":"2026-07-16T00:00:00.000Z",` +
+		`"lookback_days":30,"prs_evaluated":0,"receipt_id":"R1N-V1-0-3",` +
+		`"service_zone":"deja-test-zone","type":"R1-N",` +
+		`"vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0.3"}`
+	if canonical != want {
+		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+	const wantHash = "fe7e9eab4d351aa4f03ff8138b7a25798ec722d54219229e17b52cd9471c1498"
+	if got := sha256Hex(canonical); got != wantHash {
+		t.Errorf("SHA-256\n got: %s\nwant: %s", got, wantHash)
+	}
+}
+
+func TestGolden_R1N_DSR103_IncidentIDOmittedNotNull(t *testing.T) {
+	// Null incident_id must be OMITTED from the canonical form, not serialised as "null".
+	// "incident_id":null would produce different bytes from its absence — a drift vector.
+	e := r1nBaseEnvelope()
+	e.DSRVersion = "DSR/1.0.3"
+	e.ReceiptID = "R1N-V1-0-3"
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	if strings.Contains(canonical, "incident_id") {
+		t.Errorf("DSR/1.0.3 canonical form with null incident_id must not contain incident_id key; got: %s", canonical)
+	}
+}
+
 // ─── Parse: RG receipt acceptance ─────────────────────────────────────────────
 
 func TestParse_RG_Accepted(t *testing.T) {

@@ -55,7 +55,7 @@ type Envelope struct {
 	PriorHash            *string     `json:"prior_hash"`
 	SigningKeyID         *string     `json:"signing_key_id"`
 
-	// Attribution fields (R1, R1-L, R1-N)
+	// Attribution fields (R1, R1-L)
 	Repository           *string     `json:"repository"`
 	PRNumber             *int64      `json:"pr_number"`
 	ServiceZone          *string     `json:"service_zone"`
@@ -75,6 +75,24 @@ type Envelope struct {
 	// TemporalBasis ("deployed"|"merged_fallback") sorts after signing_algorithm; omit-null.
 	TemporalBasis        *string     `json:"temporal_basis"`
 	CCSFactors           *CCSFactors `json:"ccs_factors"`
+
+	// No-attribution fields (R1-N only)
+	// These fields are absent from R1/R1-L and present on R1-N.
+	HighestCandidateCcs *string `json:"highest_candidate_ccs"`
+	LookbackDays        *int64  `json:"lookback_days"`
+	PrsEvaluated        *int64  `json:"prs_evaluated"`
+
+	// Verification receipt fields (RV only)
+	RVType                  *string  `json:"rv_type"`
+	VerificationRunID       *string  `json:"verification_run_id"`
+	VerificationMode        *string  `json:"verification_mode"`
+	ReceiptsAttestedCount   *int64   `json:"receipts_attested_count"`
+	ChecksPassed            []string `json:"checks_passed"`
+	VerificationStartedAt   *string  `json:"verification_started_at"`
+	VerificationCompletedAt *string  `json:"verification_completed_at"`
+	VerificationResult      *string  `json:"verification_result"`
+	FailedCheckType         *string  `json:"failed_check_type"`
+	FailureReason           *string  `json:"failure_reason"`
 
 	// Governance fields (RG) — org-scoped, no vault_id
 	ChangeType     *string `json:"change_type"`

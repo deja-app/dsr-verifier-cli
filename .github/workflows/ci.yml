@@ -29,21 +29,24 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Vector parity (vendored vs authoritative SHA-256)
-        # Asserts the vendored copy of rv-canonical-vector.json has not drifted
-        # from the auditor-pinned SHA-256.  When both repos are available (e.g.
-        # local dev), run 'make verify-vector-parity WALLOW_REPO=<path>' for a
-        # byte-level diff against the wallow repo's docs/dsr/ copy.
+      - name: Vector parity (vendored copy byte-identical to wallow authoritative)
+        # Asserts the vendored copy of rv-canonical-vector.json is byte-identical
+        # to docs/dsr/rv-canonical-vector.json in the wallow monorepo.
+        # The file SHA-256 below is computed from the wallow authoritative copy;
+        # update it here whenever you update the wallow source, and update the
+        # CLI's CanonicalPayload(RV) accordingly so the Go golden tests still pass.
+        # When both repos are available locally: make verify-vector-parity WALLOW_REPO=<path>
         run: |
-          EXPECTED="39d74fec985b809b837718f1ba1295943dc78f3da766fc4d233d1716d6d31aa3"
+          EXPECTED="cb4f13d2a9eb6667e01089321c9553812615c2866231e2410d550949c26b13d6"
           ACTUAL=$(sha256sum testdata/protocol/rv-canonical-vector.json | awk '{print $1}')
           if [ "$ACTUAL" != "$EXPECTED" ]; then
-            echo "RV vector file SHA-256 mismatch — vendored copy has drifted"
-            echo "  expected: $EXPECTED"
-            echo "  actual:   $ACTUAL"
+            echo "RV vector file SHA-256 mismatch — vendored copy has drifted from wallow authoritative"
+            echo "  expected (wallow): $EXPECTED"
+            echo "  actual  (cli):     $ACTUAL"
+            echo "  Fix: copy docs/dsr/rv-canonical-vector.json from wallow, update rvCanonical() in the CLI, and update this hash."
             exit 1
           fi
-          echo "vector-parity OK"
+          echo "vector-parity OK (cb4f13d2)"
 
       - name: Test
         run: go test -race -count=1 -timeout=120s ./...
