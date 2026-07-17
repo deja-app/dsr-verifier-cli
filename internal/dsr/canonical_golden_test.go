@@ -448,6 +448,116 @@ func TestGolden_R1N_DSR103_IncidentIDOmittedNotNull(t *testing.T) {
 	}
 }
 
+// ─── R1-L low-confidence canonical ────────────────────────────────────────────
+//
+// All R1-L receipts use sha256-legacy (SHA-256 hex of sorted JSON).
+// Three vectors covering the three field combinations:
+//   DSR/1.0   — no incident_id, no is_synthetic        (baseline)
+//   DSR/1.0   — non-null incident_id, no is_synthetic  (most common)
+//   DSR/1.0.1 — non-null incident_id, is_synthetic=true (wizard test-signal)
+//
+// These are cross-checked byte-for-byte against the TypeScript implementation
+// (canonicaliseLowConfidenceReceipt in packages/api/src/utils/canonical-receipt.ts).
+//
+// R1-L was previously dispatched to attributionCanonical (via IsAttributionType)
+// which failed immediately for missing repository/pr_number. These vectors are
+// the CI gate ensuring the correct dispatch is never reverted.
+
+func r1lBaseEnvelope() *dsr.Envelope {
+	issuedAt := "2026-07-17T00:00:00.000Z"
+	count := int64(3)
+	highest := "0.720"
+	zone := "deja-test-zone"
+	vault := "00000000-0000-0000-0000-000000000001"
+	return &dsr.Envelope{
+		DSRVersion:     "DSR/1.0",
+		Type:           dsr.TypeR1L,
+		VaultID:        vault,
+		Timestamp:      issuedAt,
+		Actor:          "system:sde",
+		Origin:         "production",
+		Signature:      "placeholder",
+		IssuedAt:       &issuedAt,
+		CandidateCount: &count,
+		HighestCcs:     &highest,
+		ServiceZone:    &zone,
+	}
+}
+
+func TestGolden_R1L_Baseline_CanonicalBytes(t *testing.T) {
+	// Baseline: no incident_id, no is_synthetic (DSR/1.0).
+	e := r1lBaseEnvelope()
+	e.ReceiptID = "R1L-GOLDEN-BASELINE"
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	const want = `{"candidate_count":3,"highest_ccs":"0.720","issued_at":"2026-07-17T00:00:00.000Z","receipt_id":"R1L-GOLDEN-BASELINE","service_zone":"deja-test-zone","type":"R1-L","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0"}`
+	if canonical != want {
+		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+	if strings.Contains(canonical, "incident_id") {
+		t.Errorf("baseline must not contain incident_id; got: %s", canonical)
+	}
+	if strings.Contains(canonical, "repository") || strings.Contains(canonical, "pr_number") {
+		t.Errorf("R1-L canonical must not contain R1 attribution fields; got: %s", canonical)
+	}
+}
+
+func TestGolden_R1L_WithIncidentID_CanonicalBytes(t *testing.T) {
+	e := r1lBaseEnvelope()
+	e.ReceiptID = "R1L-GOLDEN-WITH-ID"
+	incidentID := "sentry:V1-BASELINE"
+	e.IncidentID = &incidentID
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	const want = `{"candidate_count":3,"highest_ccs":"0.720","incident_id":"sentry:V1-BASELINE","issued_at":"2026-07-17T00:00:00.000Z","receipt_id":"R1L-GOLDEN-WITH-ID","service_zone":"deja-test-zone","type":"R1-L","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0"}`
+	if canonical != want {
+		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+}
+
+func TestGolden_R1L_Synthetic_CanonicalBytes(t *testing.T) {
+	e := r1lBaseEnvelope()
+	e.DSRVersion = "DSR/1.0.1"
+	e.ReceiptID = "R1L-GOLDEN-SYNTHETIC"
+	incidentID := "sentry:V1-BASELINE"
+	synthetic := true
+	e.IncidentID = &incidentID
+	e.IsSynthetic = &synthetic
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	const want = `{"candidate_count":3,"highest_ccs":"0.720","incident_id":"sentry:V1-BASELINE","is_synthetic":true,"issued_at":"2026-07-17T00:00:00.000Z","receipt_id":"R1L-GOLDEN-SYNTHETIC","service_zone":"deja-test-zone","type":"R1-L","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0.1"}`
+	if canonical != want {
+		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+}
+
+func TestGolden_R1L_DispatchRegression_NoRepositoryRequired(t *testing.T) {
+	// CD-02 equivalent: the pre-fix dispatch routed R1-L to attributionCanonical
+	// which fails immediately for missing repository. This test asserts that
+	// CanonicalPayload succeeds for R1-L without repository or pr_number.
+	// If IsAttributionType reverts to including R1-L, this test will fail.
+	e := r1lBaseEnvelope()
+	e.ReceiptID = "R1L-REGRESSION-GUARD"
+	// Repository and PRNumber are intentionally absent (nil) — R1-L never has them.
+
+	_, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Errorf("R1-L CanonicalPayload must not error on missing repository/pr_number (pre-fix dispatch regression): %v", err)
+	}
+	if dsr.IsAttributionType(dsr.TypeR1L) {
+		t.Errorf("IsAttributionType must return false for R1-L — R1-L has its own canonical dispatch")
+	}
+}
+
 // ─── Parse: RG receipt acceptance ─────────────────────────────────────────────
 
 func TestParse_RG_Accepted(t *testing.T) {

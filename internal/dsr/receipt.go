@@ -55,7 +55,7 @@ type Envelope struct {
 	PriorHash            *string     `json:"prior_hash"`
 	SigningKeyID         *string     `json:"signing_key_id"`
 
-	// Attribution fields (R1, R1-L)
+	// Attribution fields (R1 only)
 	Repository           *string     `json:"repository"`
 	PRNumber             *int64      `json:"pr_number"`
 	ServiceZone          *string     `json:"service_zone"`
@@ -75,6 +75,12 @@ type Envelope struct {
 	// TemporalBasis ("deployed"|"merged_fallback") sorts after signing_algorithm; omit-null.
 	TemporalBasis        *string     `json:"temporal_basis"`
 	CCSFactors           *CCSFactors `json:"ccs_factors"`
+
+	// Low-confidence fields (R1-L only)
+	// candidate_count and highest_ccs are signed into the R1-L canonical form.
+	// These fields are absent from R1 and have distinct canonical semantics from R1.
+	HighestCcs     *string `json:"highest_ccs"`
+	CandidateCount *int64  `json:"candidate_count"`
 
 	// No-attribution fields (R1-N only)
 	// These fields are absent from R1/R1-L and present on R1-N.
@@ -147,9 +153,11 @@ func (e *Envelope) FormVersion() string {
 	return "v1-legacy"
 }
 
-// IsAttributionType reports whether t is R1, R1-L, or R1-N.
+// IsAttributionType reports whether t is R1.
+// R1-L and R1-N are intentionally excluded — each has its own canonical form
+// and is dispatched before this check in CanonicalPayload.
 func IsAttributionType(t string) bool {
-	return t == TypeR1 || t == TypeR1L || t == TypeR1N
+	return t == TypeR1
 }
 
 // IsResolutionType reports whether t is R2, R2-F, or R2-R.

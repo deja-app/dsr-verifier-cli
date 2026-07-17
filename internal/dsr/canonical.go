@@ -19,8 +19,12 @@ import (
 // or float values with ECMA-262 vs strconv divergence.
 func CanonicalPayload(e *Envelope) (string, error) {
 	switch {
+	case e.Type == TypeR1L:
+		// R1-L has a distinct canonical form from R1: candidate_count, highest_ccs,
+		// no repository/pr_number. Must be dispatched before IsAttributionType.
+		return lowConfidenceCanonical(e)
 	case e.Type == TypeR1N:
-		// R1-N has a distinct canonical form from R1/R1-L: no repository/pr_number,
+		// R1-N has a distinct canonical form from R1: no repository/pr_number,
 		// carries highest_candidate_ccs, lookback_days, prs_evaluated, receipt_id.
 		return noAttributionCanonical(e)
 	case e.Type == TypeRV:
@@ -248,6 +252,52 @@ func rvCanonical(e *Envelope) (string, error) {
 		"verification_result":       strDeref(e.VerificationResult, ""),
 		"verification_run_id":       strDeref(e.VerificationRunID, ""),
 		"verification_started_at":   strDeref(e.VerificationStartedAt, ""),
+	}
+	return jcsSerialise(m)
+}
+
+// lowConfidenceCanonical builds the canonical form for R1-L (low-confidence) receipts.
+//
+// Field order (base set, sorted alphabetically):
+//
+//	candidate_count, highest_ccs, [incident_id], [is_synthetic], issued_at,
+//	receipt_id, service_zone, type, vault_id, version
+//
+// candidate_count is serialised as int64 (never float64) to avoid ECMA-262 divergence.
+// incident_id is omitted when nil. is_synthetic is omitted when nil (DSR/1.0.1+ pattern).
+// issued_at comes from the explicit IssuedAt field; falls back to Timestamp.
+//
+// The signature is SHA-256 hex of the canonical string (sha256-legacy).
+// Mirror of canonicaliseLowConfidenceReceipt() in packages/api/src/utils/canonical-receipt.ts.
+func lowConfidenceCanonical(e *Envelope) (string, error) {
+	var issuedAt string
+	if e.IssuedAt != nil {
+		issuedAt = *e.IssuedAt
+	} else {
+		issuedAt = e.Timestamp
+	}
+
+	var candidateCount int64
+	if e.CandidateCount != nil {
+		candidateCount = *e.CandidateCount
+	}
+	highestCcs := strDeref(e.HighestCcs, "0.000")
+
+	m := map[string]any{
+		"candidate_count": candidateCount,
+		"highest_ccs":     highestCcs,
+		"issued_at":       issuedAt,
+		"receipt_id":      e.ReceiptID,
+		"service_zone":    strDeref(e.ServiceZone, ""),
+		"type":            e.Type,
+		"vault_id":        e.VaultID,
+		"version":         e.DSRVersion,
+	}
+	if e.IncidentID != nil {
+		m["incident_id"] = *e.IncidentID
+	}
+	if e.IsSynthetic != nil {
+		m["is_synthetic"] = *e.IsSynthetic
 	}
 	return jcsSerialise(m)
 }
