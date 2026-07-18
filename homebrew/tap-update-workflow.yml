@@ -33,19 +33,34 @@ jobs:
         run: |
           # Strip leading 'v' from version for the formula's version field.
           SEMVER="${VERSION#v}"
+          sed -i "s|version \"[0-9.]*\"|version \"${SEMVER}\"|g" Formula/dsr-verifier-cli.rb
 
-          sed -i \
-            -e "s|version \"[0-9.]*\"|version \"${SEMVER}\"|" \
-            -e "s|REPLACE_WITH_SHA256_DARWIN_AMD64|${SHA256_DARWIN_AMD64}|" \
-            -e "s|REPLACE_WITH_SHA256_DARWIN_ARM64|${SHA256_DARWIN_ARM64}|" \
-            -e "s|REPLACE_WITH_SHA256_LINUX_AMD64|${SHA256_LINUX_AMD64}|" \
-            -e "s|REPLACE_WITH_SHA256_LINUX_ARM64|${SHA256_LINUX_ARM64}|" \
-            Formula/dsr-verifier-cli.rb
+          # Replace sha256 values for each platform.  The formula uses a URL
+          # line containing the platform slug immediately above each sha256
+          # line, so we match URL+sha256 as a unit.  This handles both the
+          # REPLACE_WITH_SHA256_* placeholder form (first release) and the
+          # existing 64-char hex form (subsequent releases).
+          python3 << 'PYEOF'
+          import re, os
 
-          # Also update any existing SHA256 lines (second or subsequent releases).
-          # The pattern matches 64-char hex strings that are not the new values.
-          echo "Formula updated:"
-          grep -E "version|sha256" Formula/dsr-verifier-cli.rb
+          formula = open('Formula/dsr-verifier-cli.rb').read()
+          mapping = {
+              'darwin-arm64': os.environ['SHA256_DARWIN_ARM64'],
+              'darwin-amd64': os.environ['SHA256_DARWIN_AMD64'],
+              'linux-arm64':  os.environ['SHA256_LINUX_ARM64'],
+              'linux-amd64':  os.environ['SHA256_LINUX_AMD64'],
+          }
+          for arch, sha in mapping.items():
+              formula = re.sub(
+                  rf'(url "[^"]*{re.escape(arch)}[^"]*"\n\s+)sha256 "[^"]*"',
+                  lambda m, s=sha: m.group(1) + f'sha256 "{s}"',
+                  formula,
+              )
+          open('Formula/dsr-verifier-cli.rb', 'w').write(formula)
+          PYEOF
+
+          echo "Formula after update:"
+          grep -E "version|sha256|url" Formula/dsr-verifier-cli.rb
 
       - name: Commit and push
         run: |

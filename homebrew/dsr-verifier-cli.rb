@@ -3,22 +3,20 @@
 # Install:
 #   brew install deja-app/tap/dsr-verifier-cli
 #
-# NOTE (v1.1.0): The sha256 values below are placeholders. They must be
-# replaced with the actual checksums produced by the release CI run
-# (goreleaser / release.yml) before pushing this formula to the tap.
-# Run `sha256sum dsr-verifier-cli-v1.1.0-<platform>.tar.gz` on each
-# artifact and update the four sha256 lines accordingly.
+# The sha256 placeholders below are replaced by the release CI pipeline
+# (release.yml → Dispatch Homebrew tap update → tap-update-workflow.yml).
+# Do not hand-edit the sha256 values; they are set automatically on each tag push.
 
 class DsrVerifierCli < Formula
   desc "Offline DSR/1.0.1 receipt and evidence bundle verifier"
   homepage "https://github.com/deja-app/dsr-verifier-cli"
   license "MIT"
-  version "1.1.0"
+  version "1.4.1"
 
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/deja-app/dsr-verifier-cli/releases/download/v#{version}/dsr-verifier-cli-v#{version}-darwin-arm64.tar.gz"
-      sha256 "f2cd382b6be0587019499be8f647cbbfcbd74d2f2540e8a879117969444aa1ab"
+      sha256 "REPLACE_WITH_SHA256_DARWIN_ARM64"
 
       def install
         bin.install "dsr-verifier-cli"
@@ -27,7 +25,7 @@ class DsrVerifierCli < Formula
 
     if Hardware::CPU.intel?
       url "https://github.com/deja-app/dsr-verifier-cli/releases/download/v#{version}/dsr-verifier-cli-v#{version}-darwin-amd64.tar.gz"
-      sha256 "a1f2eb94e15066d7d661b15c2fd0971ecc659d7aedf35ad848c9e752a516ec77"
+      sha256 "REPLACE_WITH_SHA256_DARWIN_AMD64"
 
       def install
         bin.install "dsr-verifier-cli"
@@ -38,7 +36,7 @@ class DsrVerifierCli < Formula
   on_linux do
     if Hardware::CPU.arm?
       url "https://github.com/deja-app/dsr-verifier-cli/releases/download/v#{version}/dsr-verifier-cli-v#{version}-linux-arm64.tar.gz"
-      sha256 "1f3dcca943743a08a39fa0d759f849d05a0a220dcaf11fe3dd928676d95da735"
+      sha256 "REPLACE_WITH_SHA256_LINUX_ARM64"
 
       def install
         bin.install "dsr-verifier-cli"
@@ -47,7 +45,7 @@ class DsrVerifierCli < Formula
 
     if Hardware::CPU.intel?
       url "https://github.com/deja-app/dsr-verifier-cli/releases/download/v#{version}/dsr-verifier-cli-v#{version}-linux-amd64.tar.gz"
-      sha256 "0770ddf3ae1b54458cac3fd75d3a00f4c321e3b7097636f56b466d3c0ee01497"
+      sha256 "REPLACE_WITH_SHA256_LINUX_AMD64"
 
       def install
         bin.install "dsr-verifier-cli"
