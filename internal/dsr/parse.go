@@ -60,7 +60,11 @@ func validateEnvelope(e *Envelope) *dsrerrors.VerificationError {
 	if e.Timestamp == "" {
 		missing = append(missing, "timestamp")
 	}
-	if e.Actor == "" {
+	// R1-L receipts issued before DSR/1.0.2 were signed without an actor field.
+	// Actor was introduced in DSR/1.0.2; pre-1.0.2 R1-L receipts must not fail
+	// parse validation on its absence.
+	actorRequired := !(e.Type == "R1-L" && !dsrVersionAtLeast(e.DSRVersion, 1, 0, 2))
+	if e.Actor == "" && actorRequired {
 		missing = append(missing, "actor")
 	}
 	if e.Origin == "" {
@@ -122,6 +126,28 @@ func validateEnvelope(e *Envelope) *dsrerrors.VerificationError {
 	}
 
 	return nil
+}
+
+// dsrVersionAtLeast reports whether a DSR version string (e.g. "DSR/1.0.2")
+// is at or above the given major.minor.patch threshold.
+// Returns false for any unparseable version string.
+func dsrVersionAtLeast(version string, major, minor, patch int) bool {
+	s := strings.TrimPrefix(version, "DSR/")
+	var ma, mi, pa int
+	if _, err := fmt.Sscanf(s, "%d.%d.%d", &ma, &mi, &pa); err != nil {
+		// Try two-part (e.g. "1.0")
+		pa = 0
+		if _, err2 := fmt.Sscanf(s, "%d.%d", &ma, &mi); err2 != nil {
+			return false
+		}
+	}
+	if ma != major {
+		return ma > major
+	}
+	if mi != minor {
+		return mi > minor
+	}
+	return pa >= patch
 }
 
 func jsonErrorOffset(err error) int64 {

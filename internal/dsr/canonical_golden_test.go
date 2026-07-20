@@ -503,6 +503,11 @@ func TestGolden_R1L_Baseline_CanonicalBytes(t *testing.T) {
 	if strings.Contains(canonical, "repository") || strings.Contains(canonical, "pr_number") {
 		t.Errorf("R1-L canonical must not contain R1 attribution fields; got: %s", canonical)
 	}
+	// SHA-256 pin — cross-checks against the TypeScript issuer's SHA-256-hex signature.
+	const wantHash = "f3b67e37d861b4159111548ad176a98559561030fd2b4838bbb674d4c1b1562b"
+	if got := sha256Hex(canonical); got != wantHash {
+		t.Errorf("R1-L baseline SHA-256\n got: %s\nwant: %s", got, wantHash)
+	}
 }
 
 func TestGolden_R1L_WithIncidentID_CanonicalBytes(t *testing.T) {
@@ -518,6 +523,11 @@ func TestGolden_R1L_WithIncidentID_CanonicalBytes(t *testing.T) {
 	const want = `{"candidate_count":3,"highest_ccs":"0.720","incident_id":"sentry:V1-BASELINE","issued_at":"2026-07-17T00:00:00.000Z","receipt_id":"R1L-GOLDEN-WITH-ID","service_zone":"deja-test-zone","type":"R1-L","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0"}`
 	if canonical != want {
 		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+	// SHA-256 pin — cross-checks against the TypeScript issuer's SHA-256-hex signature.
+	const wantHash = "8db1f1da35433690862b9f213b0171d4944463dc72df42905c116a0c4149ca8a"
+	if got := sha256Hex(canonical); got != wantHash {
+		t.Errorf("R1-L with-incident-id SHA-256\n got: %s\nwant: %s", got, wantHash)
 	}
 }
 
@@ -537,6 +547,54 @@ func TestGolden_R1L_Synthetic_CanonicalBytes(t *testing.T) {
 	const want = `{"candidate_count":3,"highest_ccs":"0.720","incident_id":"sentry:V1-BASELINE","is_synthetic":true,"issued_at":"2026-07-17T00:00:00.000Z","receipt_id":"R1L-GOLDEN-SYNTHETIC","service_zone":"deja-test-zone","type":"R1-L","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0.1"}`
 	if canonical != want {
 		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+	// SHA-256 pin — cross-checks against the TypeScript issuer's SHA-256-hex signature.
+	const wantHash = "f100eda088139814b8d2b81b5c70c09365aa989916cadef17c88437d611e1e0b"
+	if got := sha256Hex(canonical); got != wantHash {
+		t.Errorf("R1-L synthetic SHA-256\n got: %s\nwant: %s", got, wantHash)
+	}
+}
+
+func TestGolden_R1L_WithActor_DSR102_CanonicalBytes(t *testing.T) {
+	// DSR/1.0.2 introduced the actor field (GitHub numeric user ID of top PR author).
+	// It must appear in the canonical form for 1.0.2+ receipts.
+	e := r1lBaseEnvelope()
+	e.DSRVersion = "DSR/1.0.2"
+	e.ReceiptID = "R1L-GOLDEN-ACTOR"
+	e.Actor = "86881100"
+	incidentID := "sentry:V1-BASELINE"
+	e.IncidentID = &incidentID
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	const want = `{"actor":"86881100","candidate_count":3,"highest_ccs":"0.720","incident_id":"sentry:V1-BASELINE","issued_at":"2026-07-17T00:00:00.000Z","receipt_id":"R1L-GOLDEN-ACTOR","service_zone":"deja-test-zone","type":"R1-L","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0.2"}`
+	if canonical != want {
+		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+	if !strings.Contains(canonical, `"actor":"86881100"`) {
+		t.Errorf("DSR/1.0.2 canonical must include actor field; got: %s", canonical)
+	}
+	const wantHash = "f06a9b0275925f3a7e9ff7f5f62389879fe425ad33f6795f57665483e295394a"
+	if got := sha256Hex(canonical); got != wantHash {
+		t.Errorf("R1-L DSR/1.0.2 actor SHA-256\n got: %s\nwant: %s", got, wantHash)
+	}
+}
+
+func TestGolden_R1L_Pre102_ActorExcludedFromCanonical(t *testing.T) {
+	// Pre-1.0.2 receipts may carry an actor field in the envelope (e.g. from
+	// test fixtures or future envelope extensions) but it must NOT appear in
+	// canonical bytes — otherwise old signatures would fail verification.
+	e := r1lBaseEnvelope() // DSR/1.0, Actor: "system:sde"
+	e.ReceiptID = "R1L-GOLDEN-BASELINE"
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	if strings.Contains(canonical, "actor") {
+		t.Errorf("pre-1.0.2 R1-L canonical must NOT contain actor; got: %s", canonical)
 	}
 }
 

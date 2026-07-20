@@ -299,6 +299,12 @@ func lowConfidenceCanonical(e *Envelope) (string, error) {
 	if e.IsSynthetic != nil {
 		m["is_synthetic"] = *e.IsSynthetic
 	}
+	// DSR/1.0.2+: actor is the GitHub numeric user ID of the top-candidate PR author.
+	// Gated on version so that pre-1.0.2 receipts with an actor field in the envelope
+	// (e.g. from test fixtures) don't have it incorrectly included in canonical bytes.
+	if e.Actor != "" && dsrVersionAtLeast(e.DSRVersion, 1, 0, 2) {
+		m["actor"] = e.Actor
+	}
 	return jcsSerialise(m)
 }
 
