@@ -8,6 +8,15 @@ import (
 	dsrerrors "github.com/deja-app/dsr-verifier-cli/internal/errors"
 )
 
+// SignalObsResult holds the result of the signal_observation_hash check.
+// Skipped is set when the receipt predates DSR/1.0.4 or the bundle carries
+// no signal_observation (null). Valid is only meaningful when !Skipped.
+type SignalObsResult struct {
+	Valid        bool
+	Skipped      bool
+	HumanMessage string
+}
+
 // VerifyResults aggregates the output of all verification checks plus
 // the metadata needed for output formatting.
 type VerifyResults struct {
@@ -20,6 +29,7 @@ type VerifyResults struct {
 
 	KeyAuthority *verify.KeyAuthorityResult
 	Sig          *verify.SignatureResult
+	SignalObs    *SignalObsResult
 
 	DurationMS int64
 	LogFile    string
@@ -28,6 +38,9 @@ type VerifyResults struct {
 // AllPassed reports whether all applicable checks passed.
 func (r *VerifyResults) AllPassed() bool {
 	if r.KeyAuthority != nil && !r.KeyAuthority.Valid {
+		return false
+	}
+	if r.SignalObs != nil && !r.SignalObs.Skipped && !r.SignalObs.Valid {
 		return false
 	}
 	return r.Sig != nil && r.Sig.Valid
@@ -40,6 +53,9 @@ func (r *VerifyResults) FailureCount() int {
 		count++
 	}
 	if r.Sig != nil && !r.Sig.Valid {
+		count++
+	}
+	if r.SignalObs != nil && !r.SignalObs.Skipped && !r.SignalObs.Valid {
 		count++
 	}
 	return count
@@ -87,6 +103,24 @@ func PrintVerifyResults(p *Printer, r *VerifyResults) {
 		})
 	}
 	p.Println("")
+
+	// Signal observation hash check (DSR/1.0.4 bundles only)
+	if r.SignalObs != nil {
+		totalChecks++
+		if r.SignalObs.Skipped {
+			skippedChecks++
+			p.CheckLine(true, "Signal observation hash", "SKIPPED")
+			p.Indent(p.Dim(r.SignalObs.HumanMessage))
+		} else {
+			p.CheckLine(r.SignalObs.Valid, "Signal observation hash", statusLabel(r.SignalObs.Valid))
+			if r.SignalObs.Valid {
+				p.Indent(p.Dim("sha256hex(JCS(signal_observation)) matches signed hash"))
+			} else {
+				p.Indent(p.Dim("Error: " + r.SignalObs.HumanMessage))
+			}
+		}
+		p.Println("")
+	}
 
 	// Summary
 	p.Separator()
@@ -210,6 +244,13 @@ func collectFailures(r *VerifyResults) []*dsrerrors.VerificationError {
 		if e != nil {
 			out = append(out, e)
 		}
+	}
+	if r.SignalObs != nil && !r.SignalObs.Skipped && !r.SignalObs.Valid {
+		out = append(out, dsrerrors.New(
+			dsrerrors.SignatureInvalid,
+			r.SignalObs.HumanMessage,
+			"signal_observation_hash mismatch",
+		))
 	}
 	return out
 }

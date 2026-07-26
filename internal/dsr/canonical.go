@@ -103,6 +103,18 @@ func attributionCanonical(e *Envelope) (string, error) {
 	if e.TemporalBasis != nil {
 		m["temporal_basis"] = *e.TemporalBasis
 	}
+	// DSR/1.0.4: actor (github:{id}), incident_id, signal_observation_hash.
+	// All three are omit-if-null and gated on version so pre-1.0.4 receipts
+	// are not affected even if the envelope carries these fields.
+	if e.Actor != "" && dsrVersionAtLeast(e.DSRVersion, 1, 0, 4) {
+		m["actor"] = e.Actor
+	}
+	if e.IncidentID != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 4) {
+		m["incident_id"] = *e.IncidentID
+	}
+	if e.SignalObservationHash != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 4) {
+		m["signal_observation_hash"] = *e.SignalObservationHash
+	}
 
 	return jcsSerialise(m)
 }
@@ -305,6 +317,10 @@ func lowConfidenceCanonical(e *Envelope) (string, error) {
 	if e.Actor != "" && dsrVersionAtLeast(e.DSRVersion, 1, 0, 2) {
 		m["actor"] = e.Actor
 	}
+	// DSR/1.0.4: signal_observation_hash — sha256hex(JCS(signal_observation)).
+	if e.SignalObservationHash != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 4) {
+		m["signal_observation_hash"] = *e.SignalObservationHash
+	}
 	return jcsSerialise(m)
 }
 
@@ -356,6 +372,10 @@ func noAttributionCanonical(e *Envelope) (string, error) {
 	// DSR/1.0.1+: only included when set — backward compatible with pre-1.0.1 receipts.
 	if e.IsSynthetic != nil {
 		m["is_synthetic"] = *e.IsSynthetic
+	}
+	// DSR/1.0.4: signal_observation_hash.
+	if e.SignalObservationHash != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 4) {
+		m["signal_observation_hash"] = *e.SignalObservationHash
 	}
 	return jcsSerialise(m)
 }

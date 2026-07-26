@@ -97,6 +97,18 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		return exitMissingFile
 	}
 
+	// Detect DSR/1.0.4 evidence bundle format: {"receipt": {...}, "signal_observation": ...}
+	// When detected, parse the receipt from bundle.Receipt and retain signal_observation
+	// for hash verification after signature checks complete.
+	var signalObsJSON []byte
+	if bundle, isBundle := dsr.DetectBundle(receiptData); isBundle {
+		receiptData = bundle.Receipt
+		so := bundle.SignalObservation
+		if len(so) > 0 && string(so) != "null" {
+			signalObsJSON = so
+		}
+	}
+
 	// Parse receipt.
 	envelope, parseErr := dsr.Parse(receiptData)
 	if parseErr != nil {
@@ -162,6 +174,29 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 	start := time.Now()
 	authResult := verify.KeyAuthority(envelope, activeKey)
 	sigResult := verify.Signature(envelope, activeKey)
+
+	// DSR/1.0.4: verify signal_observation_hash when the bundle carried an observation.
+	var signalObsResult *SignalObsResult
+	if envelope.SignalObservationHash != nil {
+		if len(signalObsJSON) == 0 {
+			signalObsResult = &SignalObsResult{
+				Skipped:      true,
+				HumanMessage: "bundle carried no signal_observation — hash not verifiable offline",
+			}
+		} else {
+			match, hashErr := dsr.VerifySignalObservationHash(signalObsJSON, *envelope.SignalObservationHash)
+			if hashErr != nil {
+				signalObsResult = &SignalObsResult{Valid: false, HumanMessage: hashErr.Error()}
+			} else {
+				msg := ""
+				if !match {
+					msg = "sha256hex(JCS(signal_observation)) does not match signal_observation_hash in receipt"
+				}
+				signalObsResult = &SignalObsResult{Valid: match, HumanMessage: msg}
+			}
+		}
+	}
+
 	durationMS := time.Since(start).Milliseconds()
 
 	timestamp := envelope.Timestamp
@@ -183,6 +218,7 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		FormVersion:  envelope.FormVersion(),
 		KeyAuthority: authResult,
 		Sig:          sigResult,
+		SignalObs:    signalObsResult,
 		DurationMS:   durationMS,
 	}
 	_ = keyID

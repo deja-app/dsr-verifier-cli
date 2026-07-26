@@ -392,6 +392,11 @@ func TestCanonical_Int64NeverFloat(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestChainHash_GenesisAndSuccessor(t *testing.T) {
+	// Note: pub is discarded intentionally. VerifyChainHash checks that each
+	// receipt's prior_hash equals ChainHash(prev.prior_hash, canonical(prev)).
+	// It verifies content-hash chaining, NOT the cryptographic signature — so
+	// the public key is unused. Signing the envelopes makes them realistic but
+	// has no effect on the chain-hash outcome; only the canonical bytes matter.
 	pub, priv := makeEd25519Key(t)
 	_ = pub
 
@@ -416,6 +421,9 @@ func TestChainHash_GenesisAndSuccessor(t *testing.T) {
 }
 
 func TestChainHash_BrokenChain_Fails(t *testing.T) {
+	// Note: pub is discarded intentionally — VerifyChainHash verifies content-hash
+	// chaining, not the cryptographic signature. See TestChainHash_GenesisAndSuccessor
+	// for the full explanation. Signing is vestigial here; only the prior_hash value matters.
 	pub, priv := makeEd25519Key(t)
 	_ = pub
 

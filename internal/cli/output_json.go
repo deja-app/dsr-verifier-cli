@@ -25,8 +25,9 @@ type JSONOutput struct {
 
 // JSONChecks holds the per-check result summary.
 type JSONChecks struct {
-	KeyAuthority JSONCheckResult `json:"key_authority"`
-	Signature    JSONCheckResult `json:"signature"`
+	KeyAuthority        JSONCheckResult `json:"key_authority"`
+	Signature           JSONCheckResult `json:"signature"`
+	SignalObservation   JSONCheckResult `json:"signal_observation_hash,omitempty"`
 }
 
 // JSONCheckResult is the result of a single verification check.
@@ -93,6 +94,13 @@ func buildJSONOutput(r *VerifyResults) *JSONOutput {
 		out.Checks.Signature = JSONCheckResult{
 			Passed:  r.Sig.Valid,
 			Details: json.RawMessage(b),
+		}
+	}
+
+	if r.SignalObs != nil {
+		out.Checks.SignalObservation = JSONCheckResult{
+			Passed:  r.SignalObs.Valid,
+			Skipped: r.SignalObs.Skipped,
 		}
 	}
 

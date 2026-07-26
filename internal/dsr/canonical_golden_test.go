@@ -616,6 +616,208 @@ func TestGolden_R1L_DispatchRegression_NoRepositoryRequired(t *testing.T) {
 	}
 }
 
+// ─── DSR/1.0.4 golden vectors ──────────────────────────────────────────────────
+//
+// Three new fields at 1.0.4 (all omit-if-null, gated on version):
+//   R1:    actor (github: prefix), incident_id, signal_observation_hash
+//   R1-L:  signal_observation_hash  (actor already at 1.0.2)
+//   R1-N:  signal_observation_hash
+//
+// These vectors also function as regression guards for the version gate:
+// a pre-1.0.4 envelope with these fields set must not have them in canonical bytes.
+
+const testSignalObsHash = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+const testIncidentID = "INC-00000000-0000-0000-0000-000000000001"
+
+func TestGolden_R1_DSR104_CanonicalBytes(t *testing.T) {
+	// R1 at DSR/1.0.4: actor, incident_id, signal_observation_hash added.
+	// Field order (alphabetical): actor, ccs_score, confidence, error_class,
+	//   incident_id, issued_at, matched, missing_field, pr_number,
+	//   repository, service_zone, signal_observation_hash
+	hash := testSignalObsHash
+	incID := testIncidentID
+	e := &dsr.Envelope{
+		DSRVersion:            "DSR/1.0.4",
+		Type:                  dsr.TypeR1,
+		ReceiptID:             "rcpt-104",
+		VaultID:               "vlt-test",
+		Timestamp:             "2026-01-01T00:00:00.000Z",
+		Actor:                 "github:86881100",
+		Origin:                "github",
+		Signature:             "placeholder",
+		CCSScore:              strPtr("0.8750"),
+		Confidence:            strPtr("HIGH"),
+		IssuedAt:              strPtr("2026-01-01T00:00:00.000Z"),
+		Matched:               strPtr("true"),
+		PRNumber:              int64Ptr(42),
+		Repository:            strPtr("acme-corp/payments"),
+		ServiceZone:           strPtr("zone-prod-1"),
+		IncidentID:            &incID,
+		SignalObservationHash: &hash,
+	}
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+
+	want := `{"actor":"github:86881100","ccs_score":"0.8750","confidence":"HIGH",` +
+		`"error_class":null,"incident_id":"INC-00000000-0000-0000-0000-000000000001",` +
+		`"issued_at":"2026-01-01T00:00:00.000Z","matched":"true","missing_field":null,` +
+		`"pr_number":42,"repository":"acme-corp/payments","service_zone":"zone-prod-1",` +
+		`"signal_observation_hash":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"}`
+
+	if canonical != want {
+		t.Errorf("R1 DSR/1.0.4 canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+}
+
+func TestGolden_R1_Pre104_ActorAndIncidentIDExcluded(t *testing.T) {
+	// Pre-1.0.4 R1 receipts must NOT include actor, incident_id, or
+	// signal_observation_hash even if those fields are set in the envelope.
+	hash := testSignalObsHash
+	incID := testIncidentID
+	e := &dsr.Envelope{
+		DSRVersion:            "DSR/1.0",
+		Type:                  dsr.TypeR1,
+		ReceiptID:             "rcpt-pre-104",
+		VaultID:               "vlt-test",
+		Timestamp:             "2026-01-01T00:00:00.000Z",
+		Actor:                 "github:86881100",
+		Origin:                "github",
+		Signature:             "placeholder",
+		CCSScore:              strPtr("0.8750"),
+		Confidence:            strPtr("HIGH"),
+		IssuedAt:              strPtr("2026-01-01T00:00:00.000Z"),
+		Matched:               strPtr("true"),
+		PRNumber:              int64Ptr(42),
+		Repository:            strPtr("acme-corp/payments"),
+		ServiceZone:           strPtr("zone-prod-1"),
+		IncidentID:            &incID,
+		SignalObservationHash: &hash,
+	}
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	for _, excluded := range []string{"actor", "incident_id", "signal_observation_hash"} {
+		if strings.Contains(canonical, excluded) {
+			t.Errorf("pre-1.0.4 R1 canonical must NOT contain %q; got: %s", excluded, canonical)
+		}
+	}
+}
+
+func TestGolden_R1L_DSR104_CanonicalBytes(t *testing.T) {
+	// R1-L at DSR/1.0.4: signal_observation_hash added. Actor already present at 1.0.2.
+	// Field order (alphabetical): actor, candidate_count, highest_ccs, incident_id,
+	//   issued_at, receipt_id, service_zone, signal_observation_hash, type, vault_id, version
+	hash := testSignalObsHash
+	incID := testIncidentID
+	e := &dsr.Envelope{
+		DSRVersion:            "DSR/1.0.4",
+		Type:                  dsr.TypeR1L,
+		ReceiptID:             "R1L-104-golden",
+		VaultID:               "vlt-test",
+		Timestamp:             "2026-01-01T00:00:00.000Z",
+		Actor:                 "github:86881100",
+		Origin:                "github",
+		Signature:             "placeholder",
+		HighestCcs:            strPtr("0.720"),
+		CandidateCount:        int64Ptr(3),
+		IssuedAt:              strPtr("2026-01-01T00:00:00.000Z"),
+		ServiceZone:           strPtr("zone-prod-1"),
+		IncidentID:            &incID,
+		SignalObservationHash: &hash,
+	}
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+
+	want := `{"actor":"github:86881100","candidate_count":3,"highest_ccs":"0.720",` +
+		`"incident_id":"INC-00000000-0000-0000-0000-000000000001",` +
+		`"issued_at":"2026-01-01T00:00:00.000Z","receipt_id":"R1L-104-golden",` +
+		`"service_zone":"zone-prod-1",` +
+		`"signal_observation_hash":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",` +
+		`"type":"R1-L","vault_id":"vlt-test","version":"DSR/1.0.4"}`
+
+	if canonical != want {
+		t.Errorf("R1-L DSR/1.0.4 canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+}
+
+func TestGolden_R1L_Pre104_SignalObsHashExcluded(t *testing.T) {
+	// Pre-1.0.4 R1-L receipts must NOT include signal_observation_hash.
+	hash := testSignalObsHash
+	e := r1lBaseEnvelope() // DSR/1.0, Actor: "system:sde"
+	e.SignalObservationHash = &hash
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	if strings.Contains(canonical, "signal_observation_hash") {
+		t.Errorf("pre-1.0.4 R1-L canonical must NOT contain signal_observation_hash; got: %s", canonical)
+	}
+}
+
+func TestGolden_R1N_DSR104_CanonicalBytes(t *testing.T) {
+	// R1-N at DSR/1.0.4: signal_observation_hash added.
+	// Field order (alphabetical): highest_candidate_ccs, incident_id, issued_at,
+	//   lookback_days, prs_evaluated, receipt_id, service_zone,
+	//   signal_observation_hash, type, vault_id, version
+	hash := testSignalObsHash
+	incID := testIncidentID
+	lookback := int64(30)
+	prsEval := int64(0)
+	e := &dsr.Envelope{
+		DSRVersion:            "DSR/1.0.4",
+		Type:                  dsr.TypeR1N,
+		ReceiptID:             "R1N-104-golden",
+		VaultID:               "vlt-test",
+		Timestamp:             "2026-01-01T00:00:00.000Z",
+		Actor:                 "system:sde",
+		Origin:                "production",
+		Signature:             "placeholder",
+		HighestCandidateCcs:   strPtr("0.000"),
+		LookbackDays:          &lookback,
+		PrsEvaluated:          &prsEval,
+		IssuedAt:              strPtr("2026-01-01T00:00:00.000Z"),
+		ServiceZone:           strPtr("zone-prod-1"),
+		IncidentID:            &incID,
+		SignalObservationHash: &hash,
+	}
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+
+	want := `{"highest_candidate_ccs":"0.000","incident_id":"INC-00000000-0000-0000-0000-000000000001",` +
+		`"issued_at":"2026-01-01T00:00:00.000Z","lookback_days":30,"prs_evaluated":0,` +
+		`"receipt_id":"R1N-104-golden","service_zone":"zone-prod-1",` +
+		`"signal_observation_hash":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",` +
+		`"type":"R1-N","vault_id":"vlt-test","version":"DSR/1.0.4"}`
+
+	if canonical != want {
+		t.Errorf("R1-N DSR/1.0.4 canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+}
+
+func TestGolden_R1N_Pre104_SignalObsHashExcluded(t *testing.T) {
+	// Pre-1.0.4 R1-N receipts must NOT include signal_observation_hash.
+	hash := testSignalObsHash
+	e := r1nBaseEnvelope() // DSR/1.0.3
+	e.SignalObservationHash = &hash
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	if strings.Contains(canonical, "signal_observation_hash") {
+		t.Errorf("pre-1.0.4 R1-N canonical must NOT contain signal_observation_hash; got: %s", canonical)
+	}
+}
+
 // ─── Parse: RG receipt acceptance ─────────────────────────────────────────────
 
 func TestParse_RG_Accepted(t *testing.T) {

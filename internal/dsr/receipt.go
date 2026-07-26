@@ -75,6 +75,9 @@ type Envelope struct {
 	// TemporalBasis ("deployed"|"merged_fallback") sorts after signing_algorithm; omit-null.
 	TemporalBasis        *string     `json:"temporal_basis"`
 	CCSFactors           *CCSFactors `json:"ccs_factors"`
+	// DSR/1.0.4 fields — signed into canonical at 1.0.4+, omit-if-null.
+	// SignalObservationHash is SHA-256-hex of the JCS-serialised SignalObservation.
+	SignalObservationHash *string `json:"signal_observation_hash"`
 
 	// Low-confidence fields (R1-L only)
 	// candidate_count and highest_ccs are signed into the R1-L canonical form.
