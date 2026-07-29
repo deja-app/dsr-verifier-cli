@@ -115,6 +115,15 @@ func attributionCanonical(e *Envelope) (string, error) {
 	if e.SignalObservationHash != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 4) {
 		m["signal_observation_hash"] = *e.SignalObservationHash
 	}
+	// DSR/1.0.5: scoring_version and attribution_margin. Both omit-if-null.
+	// scoring_version sorts between schema_stability_score and service_zone.
+	// attribution_margin sorts between anchoring_basis and ccs_score.
+	if e.ScoringVersion != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 5) {
+		m["scoring_version"] = *e.ScoringVersion
+	}
+	if e.AttributionMargin != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 5) {
+		m["attribution_margin"] = *e.AttributionMargin
+	}
 
 	return jcsSerialise(m)
 }
@@ -320,6 +329,11 @@ func lowConfidenceCanonical(e *Envelope) (string, error) {
 	// DSR/1.0.4: signal_observation_hash — sha256hex(JCS(signal_observation)).
 	if e.SignalObservationHash != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 4) {
 		m["signal_observation_hash"] = *e.SignalObservationHash
+	}
+	// DSR/1.0.5: attribution_margin — first-to-second CCS gap rounded to 4dp.
+	// Omit-if-null (single-candidate case). Sorts between actor and candidate_count.
+	if e.AttributionMargin != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 5) {
+		m["attribution_margin"] = *e.AttributionMargin
 	}
 	return jcsSerialise(m)
 }

@@ -818,6 +818,152 @@ func TestGolden_R1N_Pre104_SignalObsHashExcluded(t *testing.T) {
 	}
 }
 
+// ─── DSR/1.0.5 golden vectors ──────────────────────────────────────────────────
+//
+// Two new fields at 1.0.5 (both omit-if-null, gated on version):
+//   R1:   scoring_version, attribution_margin
+//   R1-L: attribution_margin
+//
+// Regression guards ensure pre-1.0.5 envelopes carrying these fields produce
+// canonical bytes that do NOT include them.
+
+func TestGolden_R1_DSR105_CanonicalBytes(t *testing.T) {
+	// R1 at DSR/1.0.5: scoring_version and attribution_margin added.
+	// Full sort order: actor, attribution_margin, ccs_score, confidence,
+	//   error_class, issued_at, matched, missing_field, pr_number,
+	//   repository, scoring_version, service_zone
+	sv := "1.0.5"
+	margin := "0.0500"
+	incID := testIncidentID
+	hash := testSignalObsHash
+	e := &dsr.Envelope{
+		DSRVersion:            "DSR/1.0.5",
+		Type:                  dsr.TypeR1,
+		ReceiptID:             "rcpt-105",
+		VaultID:               "vlt-test",
+		Timestamp:             "2026-01-01T00:00:00.000Z",
+		Actor:                 "github:86881100",
+		Origin:                "github",
+		Signature:             "placeholder",
+		CCSScore:              strPtr("0.8750"),
+		Confidence:            strPtr("HIGH"),
+		IssuedAt:              strPtr("2026-01-01T00:00:00.000Z"),
+		Matched:               strPtr("true"),
+		PRNumber:              int64Ptr(42),
+		Repository:            strPtr("acme-corp/payments"),
+		ServiceZone:           strPtr("zone-prod-1"),
+		IncidentID:            &incID,
+		SignalObservationHash: &hash,
+		ScoringVersion:        &sv,
+		AttributionMargin:     &margin,
+	}
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+
+	want := `{"actor":"github:86881100","attribution_margin":"0.0500",` +
+		`"ccs_score":"0.8750","confidence":"HIGH","error_class":null,` +
+		`"incident_id":"INC-00000000-0000-0000-0000-000000000001",` +
+		`"issued_at":"2026-01-01T00:00:00.000Z","matched":"true","missing_field":null,` +
+		`"pr_number":42,"repository":"acme-corp/payments","scoring_version":"1.0.5",` +
+		`"service_zone":"zone-prod-1",` +
+		`"signal_observation_hash":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"}`
+
+	if canonical != want {
+		t.Errorf("R1 DSR/1.0.5 canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+}
+
+func TestGolden_R1_Pre105_ScoringVersionAndMarginExcluded(t *testing.T) {
+	// Pre-1.0.5 R1 receipts must NOT include scoring_version or attribution_margin
+	// even if those fields are present in the envelope.
+	sv := "1.0.5"
+	margin := "0.0500"
+	e := &dsr.Envelope{
+		DSRVersion:        "DSR/1.0.4",
+		Type:              dsr.TypeR1,
+		ReceiptID:         "rcpt-pre-105",
+		VaultID:           "vlt-test",
+		Timestamp:         "2026-01-01T00:00:00.000Z",
+		Actor:             "github:86881100",
+		Origin:            "github",
+		Signature:         "placeholder",
+		CCSScore:          strPtr("0.8750"),
+		Confidence:        strPtr("HIGH"),
+		IssuedAt:          strPtr("2026-01-01T00:00:00.000Z"),
+		Matched:           strPtr("true"),
+		PRNumber:          int64Ptr(42),
+		Repository:        strPtr("acme-corp/payments"),
+		ServiceZone:       strPtr("zone-prod-1"),
+		ScoringVersion:    &sv,
+		AttributionMargin: &margin,
+	}
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+
+	for _, excluded := range []string{"scoring_version", "attribution_margin"} {
+		if strings.Contains(canonical, excluded) {
+			t.Errorf("pre-1.0.5 R1 canonical must NOT contain %q; got: %s", excluded, canonical)
+		}
+	}
+}
+
+func TestGolden_R1L_DSR105_CanonicalBytes(t *testing.T) {
+	// R1-L at DSR/1.0.5: attribution_margin added.
+	// Card #256 fixture: two candidates at 0.692623 / 0.692182, margin 0.000441 → rounded 0.0004.
+	// Full sort order: actor, attribution_margin, candidate_count, highest_ccs,
+	//   issued_at, receipt_id, service_zone, type, vault_id, version
+	margin := "0.0004"
+	e := &dsr.Envelope{
+		DSRVersion:        "DSR/1.0.5",
+		Type:              dsr.TypeR1L,
+		ReceiptID:         "R1L-256-golden",
+		VaultID:           "vlt-test",
+		Timestamp:         "2026-01-01T00:00:00.000Z",
+		Actor:             "github:12345678",
+		Origin:            "github",
+		Signature:         "placeholder",
+		HighestCcs:        strPtr("0.693"),
+		CandidateCount:    int64Ptr(2),
+		IssuedAt:          strPtr("2026-01-01T00:00:00.000Z"),
+		ServiceZone:       strPtr("checkout-service"),
+		AttributionMargin: &margin,
+	}
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+
+	want := `{"actor":"github:12345678","attribution_margin":"0.0004","candidate_count":2,` +
+		`"highest_ccs":"0.693","issued_at":"2026-01-01T00:00:00.000Z",` +
+		`"receipt_id":"R1L-256-golden","service_zone":"checkout-service",` +
+		`"type":"R1-L","vault_id":"vlt-test","version":"DSR/1.0.5"}`
+
+	if canonical != want {
+		t.Errorf("R1-L DSR/1.0.5 canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+}
+
+func TestGolden_R1L_Pre105_MarginExcluded(t *testing.T) {
+	// Pre-1.0.5 R1-L receipts must NOT include attribution_margin.
+	margin := "0.0004"
+	e := r1lBaseEnvelope() // DSR/1.0
+	e.AttributionMargin = &margin
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	if strings.Contains(canonical, "attribution_margin") {
+		t.Errorf("pre-1.0.5 R1-L canonical must NOT contain attribution_margin; got: %s", canonical)
+	}
+}
+
 // ─── Parse: RG receipt acceptance ─────────────────────────────────────────────
 
 func TestParse_RG_Accepted(t *testing.T) {

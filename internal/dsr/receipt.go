@@ -78,6 +78,12 @@ type Envelope struct {
 	// DSR/1.0.4 fields — signed into canonical at 1.0.4+, omit-if-null.
 	// SignalObservationHash is SHA-256-hex of the JCS-serialised SignalObservation.
 	SignalObservationHash *string `json:"signal_observation_hash"`
+	// DSR/1.0.5 fields — signed into canonical at 1.0.5+, omit-if-null.
+	// ScoringVersion identifies the CCS weight set used at issuance ("1.0.5").
+	ScoringVersion *string `json:"scoring_version"`
+	// AttributionMargin is the first-to-second CCS gap rounded to 4dp.
+	// Omitted for single-candidate receipts (margin undefined).
+	AttributionMargin *string `json:"attribution_margin"`
 
 	// Low-confidence fields (R1-L only)
 	// candidate_count and highest_ccs are signed into the R1-L canonical form.

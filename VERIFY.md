@@ -82,5 +82,6 @@ dsr-verify verify receipt.dsr --public-key vault.pub --json
 | DSR/1.0.2 | `actor` (bare numeric ID) on R1-L |
 | DSR/1.0.3 | `incident_id` nullable on R1-N |
 | DSR/1.0.4 | `actor` (github: prefix) on R1; `incident_id` on R1; `signal_observation_hash` on R1/R1-L/R1-N |
+| DSR/1.0.5 | `scoring_version` on R1; `attribution_margin` on R1/R1-L |
 
 Pre-1.0.4 bare actors on R1-L (format `"86881100"` without prefix) remain valid — the canonical form stored the value as-is at signing time.
