@@ -1017,3 +1017,205 @@ func TestParse_RG_MissingOrganizationID_Rejected(t *testing.T) {
 		t.Fatal("RG receipt without organization_id should be rejected")
 	}
 }
+
+// ─── 1.0.9 scoring_version golden vectors (R1-N and R1-L) ────────────────────
+//
+// scoring_version was added to R1-L and R1-N canonical forms in 1.0.9. It is
+// omit-if-null with NO DSR version gate — R1-N receipts are at most DSR/1.0.4 so a
+// gate at 1.0.5 would permanently prevent the field from appearing.
+//
+// Two vectors per type:
+//   WithScoringVersion  — post-1.0.9 form; scoring_version appears in canonical bytes
+//   NilScoringVersion   — pre-1.0.9 form; scoring_version absent; same bytes as before
+//
+// The WithScoringVersion canonical bytes and SHA-256 pins were computed by the
+// Python reference in the task notes and are cross-checked against the TypeScript
+// canonicaliseLowConfidenceReceipt / canonicaliseNoAttributionReceipt.
+
+func TestGolden_R1N_WithScoringVersion_CanonicalBytes(t *testing.T) {
+	// Post-1.0.9 R1-N: scoring_version present in envelope → must appear in canonical form.
+	// Uses DSR/1.0.4 (matching production) with signal_observation_hash also present.
+	//
+	// Expected field order (alphabetical):
+	//   highest_candidate_ccs, incident_id, issued_at, lookback_days, prs_evaluated,
+	//   receipt_id, scoring_version, service_zone, signal_observation_hash, type, vault_id, version
+	hash := testSignalObsHash
+	incID := testIncidentID
+	lookback := int64(30)
+	prsEval := int64(0)
+	sv := "1.0.9"
+	e := &dsr.Envelope{
+		DSRVersion:            "DSR/1.0.4",
+		Type:                  dsr.TypeR1N,
+		ReceiptID:             "R1N-109-golden",
+		VaultID:               "vlt-test",
+		Timestamp:             "2026-01-01T00:00:00.000Z",
+		Actor:                 "system:sde",
+		Origin:                "production",
+		Signature:             "placeholder",
+		HighestCandidateCcs:   strPtr("0.000"),
+		LookbackDays:          &lookback,
+		PrsEvaluated:          &prsEval,
+		IssuedAt:              strPtr("2026-01-01T00:00:00.000Z"),
+		ServiceZone:           strPtr("zone-prod-1"),
+		IncidentID:            &incID,
+		SignalObservationHash: &hash,
+		ScoringVersion:        &sv,
+	}
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+
+	want := `{"highest_candidate_ccs":"0.000","incident_id":"INC-00000000-0000-0000-0000-000000000001",` +
+		`"issued_at":"2026-01-01T00:00:00.000Z","lookback_days":30,"prs_evaluated":0,` +
+		`"receipt_id":"R1N-109-golden","scoring_version":"1.0.9","service_zone":"zone-prod-1",` +
+		`"signal_observation_hash":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",` +
+		`"type":"R1-N","vault_id":"vlt-test","version":"DSR/1.0.4"}`
+	if canonical != want {
+		t.Errorf("R1-N 1.0.9 scoring_version canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+	if !strings.Contains(canonical, `"scoring_version":"1.0.9"`) {
+		t.Errorf("post-1.0.9 R1-N canonical must contain scoring_version; got: %s", canonical)
+	}
+	// SHA-256 pin — cross-checks against Python reference computation.
+	const wantHash = "72b6bdb306d7daf4966e3cfabdad332ea6e967c3d8689737913ba128312dc48f"
+	if got := sha256Hex(canonical); got != wantHash {
+		t.Errorf("R1-N 1.0.9 SHA-256\n got: %s\nwant: %s", got, wantHash)
+	}
+}
+
+func TestGolden_R1N_NilScoringVersion_Omitted(t *testing.T) {
+	// Pre-1.0.9 R1-N: scoring_version absent from envelope → must be OMITTED from
+	// canonical bytes. If "scoring_version" appears (e.g. as null), existing
+	// signatures would break — every pre-1.0.9 production receipt would fail to verify.
+	hash := testSignalObsHash
+	incID := testIncidentID
+	lookback := int64(30)
+	prsEval := int64(0)
+	e := &dsr.Envelope{
+		DSRVersion:            "DSR/1.0.4",
+		Type:                  dsr.TypeR1N,
+		ReceiptID:             "R1N-104-golden",
+		VaultID:               "vlt-test",
+		Timestamp:             "2026-01-01T00:00:00.000Z",
+		Actor:                 "system:sde",
+		Origin:                "production",
+		Signature:             "placeholder",
+		HighestCandidateCcs:   strPtr("0.000"),
+		LookbackDays:          &lookback,
+		PrsEvaluated:          &prsEval,
+		IssuedAt:              strPtr("2026-01-01T00:00:00.000Z"),
+		ServiceZone:           strPtr("zone-prod-1"),
+		IncidentID:            &incID,
+		SignalObservationHash: &hash,
+		// ScoringVersion intentionally absent (nil) — pre-1.0.9 receipt shape
+	}
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	// This envelope is identical to TestGolden_R1N_DSR104_CanonicalBytes above.
+	// Confirming the SHA-256 pin here guarantees backward compatibility: the 1.0.9
+	// change must not alter canonical bytes for receipts where scoring_version is nil.
+	const wantHash = "da13ae1d7fd950226464259e393d4c93472b20451fa92593e661688ff39de318"
+	if got := sha256Hex(canonical); got != wantHash {
+		t.Errorf("R1-N nil-scoring_version SHA-256 changed — backward compat broken\n got: %s\nwant: %s", got, wantHash)
+	}
+	if strings.Contains(canonical, "scoring_version") {
+		t.Errorf("pre-1.0.9 R1-N canonical must NOT contain scoring_version; got: %s", canonical)
+	}
+}
+
+func TestGolden_R1L_WithScoringVersion_CanonicalBytes(t *testing.T) {
+	// Post-1.0.9 R1-L: scoring_version present in envelope → must appear in canonical form.
+	// Uses DSR/1.0.4 with actor + signal_observation_hash also present.
+	//
+	// Expected field order (alphabetical):
+	//   actor, candidate_count, highest_ccs, incident_id, issued_at,
+	//   receipt_id, scoring_version, service_zone, signal_observation_hash, type, vault_id, version
+	hash := testSignalObsHash
+	incID := testIncidentID
+	sv := "1.0.9"
+	e := &dsr.Envelope{
+		DSRVersion:            "DSR/1.0.4",
+		Type:                  dsr.TypeR1L,
+		ReceiptID:             "R1L-109-golden",
+		VaultID:               "vlt-test",
+		Timestamp:             "2026-01-01T00:00:00.000Z",
+		Actor:                 "github:86881100",
+		Origin:                "github",
+		Signature:             "placeholder",
+		HighestCcs:            strPtr("0.720"),
+		CandidateCount:        int64Ptr(3),
+		IssuedAt:              strPtr("2026-01-01T00:00:00.000Z"),
+		ServiceZone:           strPtr("zone-prod-1"),
+		IncidentID:            &incID,
+		SignalObservationHash: &hash,
+		ScoringVersion:        &sv,
+	}
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+
+	want := `{"actor":"github:86881100","candidate_count":3,"highest_ccs":"0.720",` +
+		`"incident_id":"INC-00000000-0000-0000-0000-000000000001",` +
+		`"issued_at":"2026-01-01T00:00:00.000Z","receipt_id":"R1L-109-golden",` +
+		`"scoring_version":"1.0.9","service_zone":"zone-prod-1",` +
+		`"signal_observation_hash":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",` +
+		`"type":"R1-L","vault_id":"vlt-test","version":"DSR/1.0.4"}`
+	if canonical != want {
+		t.Errorf("R1-L 1.0.9 scoring_version canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+	if !strings.Contains(canonical, `"scoring_version":"1.0.9"`) {
+		t.Errorf("post-1.0.9 R1-L canonical must contain scoring_version; got: %s", canonical)
+	}
+	// SHA-256 pin — cross-checks against Python reference computation.
+	const wantHash = "a01ce666d1bfa7ba0d396b89fb9c908ed57055a63ab2f68cc22c12645a5e2a5c"
+	if got := sha256Hex(canonical); got != wantHash {
+		t.Errorf("R1-L 1.0.9 SHA-256\n got: %s\nwant: %s", got, wantHash)
+	}
+}
+
+func TestGolden_R1L_NilScoringVersion_Omitted(t *testing.T) {
+	// Pre-1.0.9 R1-L: scoring_version absent from envelope → must be OMITTED.
+	// This envelope is identical to TestGolden_R1L_DSR104_CanonicalBytes above
+	// (same receipt ID, same field values, no ScoringVersion). Pinning the SHA-256
+	// here is the backward-compat guarantee: the 1.0.9 change must produce identical
+	// canonical bytes for any R1-L where scoring_version is nil.
+	hash := testSignalObsHash
+	incID := testIncidentID
+	e := &dsr.Envelope{
+		DSRVersion:            "DSR/1.0.4",
+		Type:                  dsr.TypeR1L,
+		ReceiptID:             "R1L-104-golden",
+		VaultID:               "vlt-test",
+		Timestamp:             "2026-01-01T00:00:00.000Z",
+		Actor:                 "github:86881100",
+		Origin:                "github",
+		Signature:             "placeholder",
+		HighestCcs:            strPtr("0.720"),
+		CandidateCount:        int64Ptr(3),
+		IssuedAt:              strPtr("2026-01-01T00:00:00.000Z"),
+		ServiceZone:           strPtr("zone-prod-1"),
+		IncidentID:            &incID,
+		SignalObservationHash: &hash,
+		// ScoringVersion intentionally absent (nil) — pre-1.0.9 receipt shape
+	}
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	const wantHash = "3111812c4dc29f3a62ad07dc75696dfc080574d92090c269578f2aa6c4ff52d5"
+	if got := sha256Hex(canonical); got != wantHash {
+		t.Errorf("R1-L nil-scoring_version SHA-256 changed — backward compat broken\n got: %s\nwant: %s", got, wantHash)
+	}
+	if strings.Contains(canonical, "scoring_version") {
+		t.Errorf("pre-1.0.9 R1-L canonical must NOT contain scoring_version; got: %s", canonical)
+	}
+}

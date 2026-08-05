@@ -335,6 +335,15 @@ func lowConfidenceCanonical(e *Envelope) (string, error) {
 	if e.AttributionMargin != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 5) {
 		m["attribution_margin"] = *e.AttributionMargin
 	}
+	// 1.0.9+: scoring_version — CCS engine version at issuance (e.g. "1.0.9").
+	// Omit-if-null; NO DSR version gate. R1-L receipts are at most DSR/1.0.5,
+	// so a gate at DSR/1.0.5 would still work — but the TypeScript issuer
+	// (canonicaliseLowConfidenceReceipt) applies no version gate, only omit-if-null.
+	// This match is intentional: the gate lives in the issuer (1.0.9 bump), not in
+	// the canonical form itself.
+	if e.ScoringVersion != nil {
+		m["scoring_version"] = *e.ScoringVersion
+	}
 	return jcsSerialise(m)
 }
 
@@ -390,6 +399,14 @@ func noAttributionCanonical(e *Envelope) (string, error) {
 	// DSR/1.0.4: signal_observation_hash.
 	if e.SignalObservationHash != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 4) {
 		m["signal_observation_hash"] = *e.SignalObservationHash
+	}
+	// 1.0.9+: scoring_version — CCS engine version at issuance (e.g. "1.0.9").
+	// Omit-if-null; NO DSR version gate. R1-N receipts are at most DSR/1.0.4, so a
+	// gate at DSR/1.0.5 would prevent this field from ever appearing in canonical
+	// bytes. The TypeScript issuer (canonicaliseNoAttributionReceipt) applies no
+	// version gate — only omit-if-null — and this implementation matches exactly.
+	if e.ScoringVersion != nil {
+		m["scoring_version"] = *e.ScoringVersion
 	}
 	return jcsSerialise(m)
 }
