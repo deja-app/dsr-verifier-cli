@@ -13,10 +13,13 @@ import (
 // This is the exact byte sequence that was signed; it must match the issuer's
 // output or signature verification will fail.
 //
-// Both canonical_form_version values ("v1-legacy" and "v2-jcs") produce
-// byte-identical output for our flat receipt payloads (string/int64/bool/null).
-// The distinction would only matter if future fields introduced nested objects
-// or float values with ECMA-262 vs strconv divergence.
+// All three canonical_form_version values ("v1-legacy", "v2-jcs", "v3-jcs")
+// produce byte-identical output for our flat receipt payloads
+// (string/int64/bool/null). The distinction would only matter if future fields
+// introduced nested objects or float values with ECMA-262 vs strconv divergence.
+// v3-jcs additionally enforces that signing identity fields (signing_key_id +
+// signing_algorithm) and, for R1, temporal_basis are present in the envelope —
+// the verifier returns an error for a v3 receipt that omits them.
 func CanonicalPayload(e *Envelope) (string, error) {
 	switch {
 	case e.Type == TypeR1L:
@@ -48,6 +51,21 @@ func attributionCanonical(e *Envelope) (string, error) {
 	}
 	if e.PRNumber == nil {
 		return "", fmt.Errorf("attribution receipt missing pr_number")
+	}
+	// v3-jcs mandatory field presence check.
+	// The TypeScript issuer guarantees these three fields on every v3 R1 receipt.
+	// A v3 receipt missing any of them has been tampered with or was produced
+	// by a non-conforming issuer — reject before computing canonical bytes.
+	if e.FormVersion() == "v3-jcs" {
+		if e.SigningKeyID == nil {
+			return "", fmt.Errorf("v3-jcs attribution receipt missing required field: signing_key_id")
+		}
+		if e.SignatureAlgorithm == nil {
+			return "", fmt.Errorf("v3-jcs attribution receipt missing required field: signature_algorithm")
+		}
+		if e.TemporalBasis == nil {
+			return "", fmt.Errorf("v3-jcs attribution receipt missing required field: temporal_basis")
+		}
 	}
 
 	// issued_at: use explicit field when present; fall back to timestamp.
@@ -143,6 +161,16 @@ func resolutionCanonical(e *Envelope) (string, error) {
 	}
 	if e.TimeToResolutionMs == nil {
 		return "", fmt.Errorf("resolution receipt missing time_to_resolution_ms")
+	}
+	// v3-jcs mandatory signing identity (B6). temporal_basis is optional on R2
+	// (populated only when gate window anchored to deploy time via D5).
+	if e.FormVersion() == "v3-jcs" {
+		if e.SigningKeyID == nil {
+			return "", fmt.Errorf("v3-jcs resolution receipt missing required field: signing_key_id")
+		}
+		if e.SignatureAlgorithm == nil {
+			return "", fmt.Errorf("v3-jcs resolution receipt missing required field: signature_algorithm")
+		}
 	}
 
 	m := map[string]any{

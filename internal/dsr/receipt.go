@@ -151,15 +151,17 @@ func (e *Envelope) SigAlgo() string {
 }
 
 // FormVersion returns the effective canonical form version.
-// Absent, null, or unknown → "v1-legacy".
+// Absent or null → "v1-legacy". Unknown values → "v1-legacy".
 func (e *Envelope) FormVersion() string {
 	if e.CanonicalFormVersion == nil {
 		return "v1-legacy"
 	}
-	if *e.CanonicalFormVersion == "v2-jcs" {
-		return "v2-jcs"
+	switch *e.CanonicalFormVersion {
+	case "v2-jcs", "v3-jcs":
+		return *e.CanonicalFormVersion
+	default:
+		return "v1-legacy"
 	}
-	return "v1-legacy"
 }
 
 // IsAttributionType reports whether t is R1.

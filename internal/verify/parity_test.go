@@ -29,6 +29,10 @@
 //     staging fixture carries no canonical_form_version field
 //   - v2-jcs (canonical_form_version="v2-jcs"): tested when the staging fixture
 //     includes this field
+//   - v3-jcs (canonical_form_version="v3-jcs"): presence-check gate tested in
+//     internal/dsr/canonical_golden_test.go (TestV3JCS_R1_* / TestV3JCS_R2_*).
+//     Signature bytes are identical to v2-jcs; end-to-end parity is exercised
+//     when the staging fixture carries canonical_form_version="v3-jcs".
 //
 // Until fixtures exist, all tests in this file are skipped with:
 //

@@ -1219,3 +1219,226 @@ func TestGolden_R1L_NilScoringVersion_Omitted(t *testing.T) {
 		t.Errorf("pre-1.0.9 R1-L canonical must NOT contain scoring_version; got: %s", canonical)
 	}
 }
+
+// ─── v3-jcs canonical form version tests ─────────────────────────────────────
+
+// v3JCSMinimalR1 returns the smallest valid v3-jcs R1 envelope —
+// all three mandatory v3 fields (signing_key_id, signature_algorithm,
+// temporal_basis) are set.
+func v3JCSMinimalR1() *dsr.Envelope {
+	cfv := "v3-jcs"
+	algo := "ed25519-v1"
+	kid := "abc123def456abc1"
+	tb := "merged_fallback"
+	return &dsr.Envelope{
+		DSRVersion:           "DSR/1.0.5",
+		Type:                 dsr.TypeR1,
+		ReceiptID:            "rcpt-v3",
+		VaultID:              "vlt-test",
+		Timestamp:            "2026-01-01T00:00:00.000Z",
+		Actor:                "github:86881100",
+		Origin:               "github",
+		Signature:            "placeholder",
+		CCSScore:             strPtr("0.8750"),
+		Confidence:           strPtr("HIGH"),
+		IssuedAt:             strPtr("2026-01-01T00:00:00.000Z"),
+		Matched:              strPtr("true"),
+		PRNumber:             int64Ptr(42),
+		Repository:           strPtr("acme-corp/payments"),
+		ServiceZone:          strPtr("zone-prod-1"),
+		CanonicalFormVersion: &cfv,
+		SignatureAlgorithm:   &algo,
+		SigningKeyID:         &kid,
+		TemporalBasis:        &tb,
+	}
+}
+
+// TestFormVersion_V3JCS_Recognised verifies that FormVersion() returns "v3-jcs"
+// rather than silently falling back to "v1-legacy" for v3 receipts.
+func TestFormVersion_V3JCS_Recognised(t *testing.T) {
+	e := v3JCSMinimalR1()
+	if got := e.FormVersion(); got != "v3-jcs" {
+		t.Errorf("FormVersion() = %q, want \"v3-jcs\"", got)
+	}
+}
+
+// TestFormVersion_V2JCS_Recognised ensures v2-jcs still round-trips correctly
+// after the v3-jcs addition.
+func TestFormVersion_V2JCS_Recognised(t *testing.T) {
+	cfv := "v2-jcs"
+	e := &dsr.Envelope{CanonicalFormVersion: &cfv}
+	if got := e.FormVersion(); got != "v2-jcs" {
+		t.Errorf("FormVersion() = %q, want \"v2-jcs\"", got)
+	}
+}
+
+// TestFormVersion_Nil_IsLegacy and TestFormVersion_Unknown_IsLegacy confirm the
+// two backward-compat cases still hold.
+func TestFormVersion_Nil_IsLegacy(t *testing.T) {
+	e := &dsr.Envelope{}
+	if got := e.FormVersion(); got != "v1-legacy" {
+		t.Errorf("FormVersion() = %q, want \"v1-legacy\" for nil", got)
+	}
+}
+
+func TestFormVersion_Unknown_IsLegacy(t *testing.T) {
+	cfv := "v99-future"
+	e := &dsr.Envelope{CanonicalFormVersion: &cfv}
+	if got := e.FormVersion(); got != "v1-legacy" {
+		t.Errorf("FormVersion() = %q, want \"v1-legacy\" for unknown", got)
+	}
+}
+
+// TestV3JCS_R1_AllMandatoryFields_Passes proves that a fully-populated v3
+// R1 envelope canonicalises successfully and the mandatory fields appear in
+// the canonical bytes.
+func TestV3JCS_R1_AllMandatoryFields_Passes(t *testing.T) {
+	e := v3JCSMinimalR1()
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload returned unexpected error: %v", err)
+	}
+	for _, must := range []string{"signing_algorithm", "signing_key_id", "temporal_basis"} {
+		if !strings.Contains(canonical, must) {
+			t.Errorf("canonical missing %q: %s", must, canonical)
+		}
+	}
+}
+
+// TestV3JCS_R1_MissingSigningKeyID_Error verifies the presence check.
+func TestV3JCS_R1_MissingSigningKeyID_Error(t *testing.T) {
+	e := v3JCSMinimalR1()
+	e.SigningKeyID = nil
+	_, err := dsr.CanonicalPayload(e)
+	if err == nil {
+		t.Fatal("expected error for v3-jcs R1 missing signing_key_id, got nil")
+	}
+	if !strings.Contains(err.Error(), "signing_key_id") {
+		t.Errorf("error should mention signing_key_id, got: %v", err)
+	}
+}
+
+// TestV3JCS_R1_MissingSignatureAlgorithm_Error verifies the presence check.
+func TestV3JCS_R1_MissingSignatureAlgorithm_Error(t *testing.T) {
+	e := v3JCSMinimalR1()
+	e.SignatureAlgorithm = nil
+	_, err := dsr.CanonicalPayload(e)
+	if err == nil {
+		t.Fatal("expected error for v3-jcs R1 missing signature_algorithm, got nil")
+	}
+	if !strings.Contains(err.Error(), "signature_algorithm") {
+		t.Errorf("error should mention signature_algorithm, got: %v", err)
+	}
+}
+
+// TestV3JCS_R1_MissingTemporalBasis_Error verifies the presence check.
+func TestV3JCS_R1_MissingTemporalBasis_Error(t *testing.T) {
+	e := v3JCSMinimalR1()
+	e.TemporalBasis = nil
+	_, err := dsr.CanonicalPayload(e)
+	if err == nil {
+		t.Fatal("expected error for v3-jcs R1 missing temporal_basis, got nil")
+	}
+	if !strings.Contains(err.Error(), "temporal_basis") {
+		t.Errorf("error should mention temporal_basis, got: %v", err)
+	}
+}
+
+// TestV2JCS_R1_NoPresenceCheck confirms that the v3-jcs mandatory field check
+// does NOT fire for v2-jcs receipts — backwards compat.
+func TestV2JCS_R1_NoPresenceCheck(t *testing.T) {
+	cfv := "v2-jcs"
+	e := &dsr.Envelope{
+		DSRVersion:           "DSR/1.0.4",
+		Type:                 dsr.TypeR1,
+		ReceiptID:            "rcpt-v2",
+		VaultID:              "vlt-test",
+		Timestamp:            "2026-01-01T00:00:00.000Z",
+		Origin:               "github",
+		Signature:            "placeholder",
+		CCSScore:             strPtr("0.8750"),
+		Confidence:           strPtr("HIGH"),
+		IssuedAt:             strPtr("2026-01-01T00:00:00.000Z"),
+		Matched:              strPtr("true"),
+		PRNumber:             int64Ptr(42),
+		Repository:           strPtr("acme-corp/payments"),
+		ServiceZone:          strPtr("zone-prod-1"),
+		CanonicalFormVersion: &cfv,
+		// signing_key_id, signature_algorithm, temporal_basis intentionally absent
+	}
+	_, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("v2-jcs R1 without signing identity should not error; got: %v", err)
+	}
+}
+
+// TestV3JCS_R2_MissingSigningKeyID_Error verifies the R2 presence check.
+func TestV3JCS_R2_MissingSigningKeyID_Error(t *testing.T) {
+	cfv := "v3-jcs"
+	algo := "ed25519-v1"
+	// no SigningKeyID
+	ttrMs := int64(120000)
+	resolvedAt := "2026-01-01T00:02:00.000Z"
+	gateAt := "2026-01-01T00:02:01.000Z"
+	attrID := "R1-00000000-0000-0000-0000-000000000001"
+	incID := "INC-00000000-0000-0000-0000-000000000001"
+	e := &dsr.Envelope{
+		DSRVersion:           "DSR/1.0.5",
+		Type:                 dsr.TypeR2,
+		ReceiptID:            "R2-v3-test",
+		VaultID:              "vlt-test",
+		Timestamp:            "2026-01-01T00:02:01.000Z",
+		Origin:               "deja",
+		Signature:            "placeholder",
+		AttributionReceiptID: &attrID,
+		IncidentID:           &incID,
+		ResolvedAt:           &resolvedAt,
+		GateEvaluatedAt:      &gateAt,
+		TimeToResolutionMs:   &ttrMs,
+		CanonicalFormVersion: &cfv,
+		SignatureAlgorithm:   &algo,
+		// SigningKeyID intentionally absent
+	}
+	_, err := dsr.CanonicalPayload(e)
+	if err == nil {
+		t.Fatal("expected error for v3-jcs R2 missing signing_key_id, got nil")
+	}
+	if !strings.Contains(err.Error(), "signing_key_id") {
+		t.Errorf("error should mention signing_key_id, got: %v", err)
+	}
+}
+
+// TestV3JCS_R2_NoTemporalBasisRequired confirms temporal_basis is NOT required
+// on v3-jcs R2 receipts (only signing identity is mandatory for R2).
+func TestV3JCS_R2_NoTemporalBasisRequired(t *testing.T) {
+	cfv := "v3-jcs"
+	algo := "ed25519-v1"
+	kid := "abc123def456abc1"
+	ttrMs := int64(120000)
+	resolvedAt := "2026-01-01T00:02:00.000Z"
+	gateAt := "2026-01-01T00:02:01.000Z"
+	attrID := "R1-00000000-0000-0000-0000-000000000001"
+	incID := "INC-00000000-0000-0000-0000-000000000001"
+	e := &dsr.Envelope{
+		DSRVersion:           "DSR/1.0.5",
+		Type:                 dsr.TypeR2,
+		ReceiptID:            "R2-v3-test",
+		VaultID:              "vlt-test",
+		Timestamp:            "2026-01-01T00:02:01.000Z",
+		Origin:               "deja",
+		Signature:            "placeholder",
+		AttributionReceiptID: &attrID,
+		IncidentID:           &incID,
+		ResolvedAt:           &resolvedAt,
+		GateEvaluatedAt:      &gateAt,
+		TimeToResolutionMs:   &ttrMs,
+		CanonicalFormVersion: &cfv,
+		SignatureAlgorithm:   &algo,
+		SigningKeyID:         &kid,
+		// TemporalBasis intentionally absent — NOT mandatory for R2
+	}
+	_, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("v3-jcs R2 without temporal_basis should not error; got: %v", err)
+	}
+}
