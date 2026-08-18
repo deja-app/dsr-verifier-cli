@@ -8,6 +8,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"strings"
@@ -27,19 +28,74 @@ type PublicKeyWithID struct {
 }
 
 // ParsePublicKeyFile auto-detects the key format and parses accordingly:
-//   - If the file contains "-----BEGIN", parse as PKIX PEM.
-//   - Otherwise, treat as a base64-encoded raw 32-byte Ed25519 public key.
 //
-// Both formats may include an optional header comment:
+//  1. JSON — the /api/public/signing-key endpoint response:
+//     {"algorithm":"ed25519-v1","publicKey":"<base64>","keyId":"<id>",...}
+//     The "publicKey" field is extracted and parsed as a raw Ed25519 key.
+//     "keyId" is used as the key ID when present.
 //
-//	# key_id: <id>
+//  2. PEM — "-----BEGIN PUBLIC KEY-----" PKIX block (Ed25519, RSA, ECDSA).
 //
-// placed before the PEM block (or on its own line for base64 keys).
+//  3. Raw base64 — a plain base64-encoded 32-byte Ed25519 key, optionally
+//     with "# key_id: <id>" comment lines.
+//
+// This means `curl https://<host>/api/public/signing-key > key.pub` produces
+// a file that ParsePublicKeyFile accepts directly — no jq or post-processing.
 func ParsePublicKeyFile(data []byte) (*PublicKeyWithID, *dsrerrors.VerificationError) {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) > 0 && trimmed[0] == '{' {
+		return parseSigningKeyJSON(data)
+	}
 	if bytes.Contains(data, []byte("-----BEGIN")) {
 		return parsePEMKey(data)
 	}
 	return parseED25519Base64Key(data)
+}
+
+// parseSigningKeyJSON parses the JSON response from /api/public/signing-key.
+// Expected shape: {"algorithm":"ed25519-v1","publicKey":"<base64>","keyId":"<id>",...}
+// Only ed25519-v1 is supported via this path; other algorithms require PEM.
+func parseSigningKeyJSON(data []byte) (*PublicKeyWithID, *dsrerrors.VerificationError) {
+	var doc struct {
+		Algorithm string `json:"algorithm"`
+		PublicKey string `json:"publicKey"`
+		KeyID     string `json:"keyId"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, dsrerrors.New(
+			dsrerrors.KeyParseError,
+			"The key file looks like JSON but could not be parsed. "+
+				"Expected the /api/public/signing-key response shape: "+
+				"{\"algorithm\":\"ed25519-v1\",\"publicKey\":\"<base64>\",\"keyId\":\"<id>\"}.",
+			fmt.Sprintf("json.Unmarshal error: %s", err.Error()),
+		)
+	}
+	if doc.PublicKey == "" {
+		return nil, dsrerrors.New(
+			dsrerrors.KeyParseError,
+			"The JSON key file is missing the \"publicKey\" field. "+
+				"Expected the /api/public/signing-key response shape.",
+			"publicKey field is empty or absent",
+		)
+	}
+	if doc.Algorithm != "" && doc.Algorithm != "ed25519-v1" {
+		return nil, dsrerrors.New(
+			dsrerrors.KeyParseError,
+			fmt.Sprintf(
+				"The JSON key file declares algorithm %q but this verifier "+
+					"only supports ed25519-v1 via the JSON format. "+
+					"For RSA or ECDSA keys, supply a PEM-encoded PKIX public key.",
+				doc.Algorithm,
+			),
+			fmt.Sprintf("unsupported algorithm in JSON key: %q", doc.Algorithm),
+		)
+	}
+	// Delegate base64 decoding and length check to parseED25519Base64Key.
+	synth := []byte(doc.PublicKey)
+	if doc.KeyID != "" {
+		synth = append([]byte("# key_id: "+doc.KeyID+"\n"), synth...)
+	}
+	return parseED25519Base64Key(synth)
 }
 
 // parsePEMKey parses a PKIX PEM-encoded public key ("BEGIN PUBLIC KEY").

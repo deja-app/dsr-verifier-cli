@@ -172,6 +172,49 @@ func TestSignature_Ed25519_Base64Key_Passes(t *testing.T) {
 	}
 }
 
+// TestSignature_Ed25519_JSONKey_Passes covers the JSON format returned by
+// GET /api/public/signing-key — so `curl <url> > key.pub` works directly
+// without any jq post-processing by the user.
+func TestSignature_Ed25519_JSONKey_Passes(t *testing.T) {
+	pub, priv := makeEd25519Key(t)
+	e := baseR1()
+	e.SigningKeyID = ptrStr(testKeyID)
+	signEd25519(t, e, priv)
+
+	// Simulate the exact JSON shape the endpoint returns.
+	b64Key := base64.StdEncoding.EncodeToString([]byte(pub))
+	jsonKey := []byte(`{"algorithm":"ed25519-v1","publicKey":"` + b64Key + `","keyId":"` + testKeyID + `","issuedAt":"2026-08-17T11:26:14.498Z"}`)
+
+	provided, keyErr := verify.ParsePublicKeyFile(jsonKey)
+	if keyErr != nil {
+		t.Fatalf("ParsePublicKeyFile (JSON): %v", keyErr)
+	}
+	if provided.KeyID != testKeyID {
+		t.Errorf("KeyID: got %q, want %q", provided.KeyID, testKeyID)
+	}
+	if res := verify.Signature(e, provided); !res.Valid {
+		t.Errorf("Signature (JSON key): %v", res.Err)
+	}
+}
+
+func TestParsePublicKeyFile_JSON_MissingPublicKey_Errors(t *testing.T) {
+	jsonKey := []byte(`{"algorithm":"ed25519-v1","keyId":"abc"}`)
+	_, keyErr := verify.ParsePublicKeyFile(jsonKey)
+	if keyErr == nil {
+		t.Fatal("expected error for JSON missing publicKey field, got nil")
+	}
+}
+
+func TestParsePublicKeyFile_JSON_UnsupportedAlgorithm_Errors(t *testing.T) {
+	pub, _ := makeEd25519Key(t)
+	b64Key := base64.StdEncoding.EncodeToString([]byte(pub))
+	jsonKey := []byte(`{"algorithm":"rsa-pss-sha256","publicKey":"` + b64Key + `","keyId":"abc"}`)
+	_, keyErr := verify.ParsePublicKeyFile(jsonKey)
+	if keyErr == nil {
+		t.Fatal("expected error for unsupported algorithm in JSON key, got nil")
+	}
+}
+
 func TestSignature_Ed25519_Tampered_Fails(t *testing.T) {
 	pub, priv := makeEd25519Key(t)
 	e := baseR1()
