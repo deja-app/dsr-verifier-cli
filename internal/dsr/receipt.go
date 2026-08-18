@@ -10,6 +10,8 @@
 // large values, breaking signature verification.
 package dsr
 
+import "fmt"
+
 // Receipt type constants.
 const (
 	TypeR0  = "R0"
@@ -151,16 +153,38 @@ func (e *Envelope) SigAlgo() string {
 }
 
 // FormVersion returns the effective canonical form version.
-// Absent or null → "v1-legacy". Unknown values → "v1-legacy".
+// Absent or empty → "v1-legacy" (backward compat for old receipts).
+// All other values are returned as-is; call ValidateFormVersion to
+// reject forms this verifier does not implement.
 func (e *Envelope) FormVersion() string {
-	if e.CanonicalFormVersion == nil {
+	if e.CanonicalFormVersion == nil || *e.CanonicalFormVersion == "" {
 		return "v1-legacy"
 	}
-	switch *e.CanonicalFormVersion {
-	case "v2-jcs", "v3-jcs":
-		return *e.CanonicalFormVersion
+	return *e.CanonicalFormVersion
+}
+
+// ValidateFormVersion returns an error when the envelope declares a
+// canonical_form_version this verifier does not implement.
+//
+// Implemented forms: v1-legacy, v2-jcs, v3-jcs, v4-jcs.
+// Absent or empty canonical_form_version is accepted (treated as v1-legacy).
+//
+// A silent downgrade on an unknown form version would compute different bytes
+// than the issuer and report INVALID — misleading the caller into believing
+// the receipt is tampered rather than simply issued by a newer version of the
+// software. Refusing the form is honest and actionable.
+func (e *Envelope) ValidateFormVersion() error {
+	fv := e.FormVersion()
+	switch fv {
+	case "v1-legacy", "v2-jcs", "v3-jcs", "v4-jcs":
+		return nil
 	default:
-		return "v1-legacy"
+		return fmt.Errorf(
+			"unsupported canonical_form_version %q: this verifier implements "+
+				"v1-legacy, v2-jcs, v3-jcs, v4-jcs — upgrade the verifier to "+
+				"check receipts issued under %q",
+			fv, fv,
+		)
 	}
 }
 

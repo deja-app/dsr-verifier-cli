@@ -1272,8 +1272,7 @@ func TestFormVersion_V2JCS_Recognised(t *testing.T) {
 	}
 }
 
-// TestFormVersion_Nil_IsLegacy and TestFormVersion_Unknown_IsLegacy confirm the
-// two backward-compat cases still hold.
+// TestFormVersion_Nil_IsLegacy confirms nil canonical_form_version → "v1-legacy".
 func TestFormVersion_Nil_IsLegacy(t *testing.T) {
 	e := &dsr.Envelope{}
 	if got := e.FormVersion(); got != "v1-legacy" {
@@ -1281,11 +1280,15 @@ func TestFormVersion_Nil_IsLegacy(t *testing.T) {
 	}
 }
 
-func TestFormVersion_Unknown_IsLegacy(t *testing.T) {
+// TestFormVersion_Unknown_ReturnsRawValue confirms that FormVersion() returns
+// the raw value for an unknown form (it no longer silently downgrades to
+// "v1-legacy"). ValidateFormVersion() is the gatekeeper that rejects it;
+// FormVersion() is only responsible for the nil/empty → "v1-legacy" default.
+func TestFormVersion_Unknown_ReturnsRawValue(t *testing.T) {
 	cfv := "v99-future"
 	e := &dsr.Envelope{CanonicalFormVersion: &cfv}
-	if got := e.FormVersion(); got != "v1-legacy" {
-		t.Errorf("FormVersion() = %q, want \"v1-legacy\" for unknown", got)
+	if got := e.FormVersion(); got != "v99-future" {
+		t.Errorf("FormVersion() = %q, want %q (raw value, not downgraded)", got, cfv)
 	}
 }
 
@@ -1440,5 +1443,234 @@ func TestV3JCS_R2_NoTemporalBasisRequired(t *testing.T) {
 	_, err := dsr.CanonicalPayload(e)
 	if err != nil {
 		t.Fatalf("v3-jcs R2 without temporal_basis should not error; got: %v", err)
+	}
+}
+
+// ─── v4-jcs R1 attribution — version field in canonical bytes ─────────────────
+
+// TestGolden_R1_V4JCS_CanonicalBytes verifies that v4-jcs R1 canonical bytes
+// include the DSR spec version string and differ from v3-jcs bytes.
+// Cross-checked against canonicaliseReceiptJCSv4() in the TypeScript issuer
+// (packages/api/src/utils/canonical-receipt.ts).
+func TestGolden_R1_V4JCS_CanonicalBytes(t *testing.T) {
+	cfv := "v4-jcs"
+	algo := "ed25519-v1"
+	kid := "deja-managed-v1"
+	tmpBasis := "merged_fallback"
+	actor := "github:12345"
+	ccs := "0.5000"
+	conf := "STANDARD_DEDUCTION"
+	matched := "true"
+	repo := "acme/api"
+	svcZone := "api"
+	pr := int64(1)
+	ts := "2026-01-01T12:00:00.000Z"
+
+	e := &dsr.Envelope{
+		DSRVersion:           "DSR/1.0.6",
+		Type:                 dsr.TypeR1,
+		ReceiptID:            "R1-v4-golden",
+		VaultID:              "vlt-test",
+		Timestamp:            ts,
+		Actor:                actor,
+		Origin:               "production",
+		Signature:            "placeholder",
+		Repository:           &repo,
+		PRNumber:             &pr,
+		ServiceZone:          &svcZone,
+		CCSScore:             &ccs,
+		Confidence:           &conf,
+		Matched:              &matched,
+		CanonicalFormVersion: &cfv,
+		SignatureAlgorithm:   &algo,
+		SigningKeyID:         &kid,
+		TemporalBasis:        &tmpBasis,
+	}
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+
+	// v4-jcs: "version" must appear in the canonical bytes.
+	if !strings.Contains(canonical, `"version":"DSR/1.0.6"`) {
+		t.Errorf("v4-jcs canonical bytes missing version field\n got: %s", canonical)
+	}
+
+	// v4-jcs: "version" must be the LAST key (alphabetically greatest in the R1 set).
+	lastBrace := strings.LastIndex(canonical, `}`)
+	versionSuffix := `"version":"DSR/1.0.6"}`
+	if !strings.HasSuffix(canonical[:lastBrace+1], versionSuffix) {
+		t.Errorf("version must be the last key in v4-jcs canonical bytes\n got: %s", canonical)
+	}
+
+	// v4-jcs bytes must differ from v3-jcs bytes (same envelope, different form).
+	cfv3 := "v3-jcs"
+	e3 := *e
+	e3.CanonicalFormVersion = &cfv3
+	v3canonical, err := dsr.CanonicalPayload(&e3)
+	if err != nil {
+		t.Fatalf("v3-jcs CanonicalPayload: %v", err)
+	}
+	if canonical == v3canonical {
+		t.Error("v4-jcs and v3-jcs canonical bytes must differ (version field adds bytes)")
+	}
+
+	// Golden SHA-256: computed from the canonical string above.
+	wantHash := sha256Hex(canonical)
+	if sha256Hex(canonical) != wantHash {
+		t.Errorf("SHA-256 mismatch")
+	}
+
+	// Pin the exact canonical bytes so any future drift is caught immediately.
+	// This vector was generated from the Go implementation and cross-checked
+	// against canonicaliseReceiptJCSv4() in the TypeScript issuer.
+	wantCanonical := `{"actor":"github:12345","ccs_score":"0.5000","confidence":"STANDARD_DEDUCTION",` +
+		`"error_class":null,"issued_at":"2026-01-01T12:00:00.000Z","matched":"true",` +
+		`"missing_field":null,"pr_number":1,"repository":"acme/api","service_zone":"api",` +
+		`"signing_algorithm":"ed25519-v1","signing_key_id":"deja-managed-v1",` +
+		`"temporal_basis":"merged_fallback","version":"DSR/1.0.6"}`
+	if canonical != wantCanonical {
+		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, wantCanonical)
+	}
+}
+
+// ─── v4-jcs R2 resolution — version field in canonical bytes ──────────────────
+
+// TestGolden_R2_V4JCS_CanonicalBytes verifies that v4-jcs R2 canonical bytes
+// include the DSR spec version string and differ from v3-jcs bytes.
+// Cross-checked against canonicaliseResolutionReceiptJCSv4() in the TypeScript
+// issuer (packages/api/src/utils/canonical-receipt.ts).
+func TestGolden_R2_V4JCS_CanonicalBytes(t *testing.T) {
+	cfv := "v4-jcs"
+	algo := "ed25519-v1"
+	kid := "deja-managed-v1"
+	attrID := "R1-00000000-0000-0000-0000-000000000001"
+	incID := "INC-00000000-0000-0000-0000-000000000001"
+	resolvedAt := "2026-01-01T00:02:00.000Z"
+	gateAt := "2026-01-01T00:02:01.000Z"
+	ttrMs := int64(120000)
+
+	e := &dsr.Envelope{
+		DSRVersion:           "DSR/1.0.6",
+		Type:                 dsr.TypeR2,
+		ReceiptID:            "R2-v4-golden",
+		VaultID:              "vlt-test",
+		Timestamp:            "2026-01-01T00:02:01.000Z",
+		Origin:               "production",
+		Signature:            "placeholder",
+		AttributionReceiptID: &attrID,
+		IncidentID:           &incID,
+		ResolvedAt:           &resolvedAt,
+		GateEvaluatedAt:      &gateAt,
+		TimeToResolutionMs:   &ttrMs,
+		CanonicalFormVersion: &cfv,
+		SignatureAlgorithm:   &algo,
+		SigningKeyID:         &kid,
+	}
+
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+
+	// v4-jcs: "version" must appear in canonical bytes, after vault_id.
+	if !strings.Contains(canonical, `"version":"DSR/1.0.6"`) {
+		t.Errorf("v4-jcs R2 canonical bytes missing version field\n got: %s", canonical)
+	}
+
+	// "version" must sort after "vault_id" (vault_id < version alphabetically).
+	vi := strings.Index(canonical, `"vault_id"`)
+	vv := strings.Index(canonical, `"version"`)
+	if vi < 0 || vv < 0 || vv < vi {
+		t.Errorf("version must appear after vault_id in R2 canonical bytes\n got: %s", canonical)
+	}
+
+	// v4-jcs bytes must differ from v3-jcs bytes.
+	cfv3 := "v3-jcs"
+	e3 := *e
+	e3.CanonicalFormVersion = &cfv3
+	v3canonical, err := dsr.CanonicalPayload(&e3)
+	if err != nil {
+		t.Fatalf("v3-jcs CanonicalPayload: %v", err)
+	}
+	if canonical == v3canonical {
+		t.Error("v4-jcs and v3-jcs R2 canonical bytes must differ")
+	}
+
+	// Pin the exact canonical bytes.
+	wantCanonical := `{"attribution_receipt_id":"R1-00000000-0000-0000-0000-000000000001",` +
+		`"duration_gate_score":"0.0000","feature_gate_score":"0.0000",` +
+		`"file_gate_score":"0.0000","gate_evaluated_at":"2026-01-01T00:02:01.000Z",` +
+		`"gates_passed":false,"incident_id":"INC-00000000-0000-0000-0000-000000000001",` +
+		`"infra_gate_score":"0.0000","issued_at":"2026-01-01T00:02:01.000Z",` +
+		`"rate_gate_score":"0.0000","resolved_at":"2026-01-01T00:02:00.000Z",` +
+		`"service_zone":"","signing_algorithm":"ed25519-v1",` +
+		`"signing_key_id":"deja-managed-v1","time_to_resolution_ms":120000,` +
+		`"vault_id":"vlt-test","version":"DSR/1.0.6"}`
+	if canonical != wantCanonical {
+		t.Errorf("R2 v4-jcs canonical mismatch\n got: %s\nwant: %s", canonical, wantCanonical)
+	}
+}
+
+// ─── Unknown canonical form version — refusal ─────────────────────────────────
+
+// TestUnknownFormVersion_Refusal verifies that CanonicalPayload refuses a
+// canonical_form_version it does not implement, rather than silently downgrading.
+// A silent downgrade computes bytes the issuer never signed and reports INVALID —
+// misleading the caller into believing the receipt is tampered rather than simply
+// issued by a newer version of the software.
+func TestUnknownFormVersion_Refusal(t *testing.T) {
+	cfv := "v99-future"
+	repo := "acme/api"
+	pr := int64(1)
+	e := &dsr.Envelope{
+		DSRVersion:           "DSR/1.0.99",
+		Type:                 dsr.TypeR1,
+		ReceiptID:            "R1-future",
+		VaultID:              "vlt-test",
+		Timestamp:            "2026-01-01T00:00:00.000Z",
+		CanonicalFormVersion: &cfv,
+		Repository:           &repo,
+		PRNumber:             &pr,
+	}
+
+	_, err := dsr.CanonicalPayload(e)
+	if err == nil {
+		t.Fatal("expected error for unknown canonical_form_version, got nil — this is the silent-downgrade defect")
+	}
+	if !strings.Contains(err.Error(), "v99-future") {
+		t.Errorf("error must name the unsupported form version; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "v4-jcs") {
+		t.Errorf("error must name the highest implemented form so the user knows what to upgrade to; got: %v", err)
+	}
+}
+
+// TestFormVersion_V4JCS_Accepted verifies that v4-jcs is now an accepted form.
+func TestFormVersion_V4JCS_Accepted(t *testing.T) {
+	cfv := "v4-jcs"
+	algo := "ed25519-v1"
+	kid := "deja-managed-v1"
+	tmpBasis := "merged_fallback"
+	repo := "acme/api"
+	pr := int64(1)
+	e := &dsr.Envelope{
+		DSRVersion:           "DSR/1.0.6",
+		Type:                 dsr.TypeR1,
+		ReceiptID:            "R1-v4-accepted",
+		VaultID:              "vlt-test",
+		Timestamp:            "2026-01-01T00:00:00.000Z",
+		Repository:           &repo,
+		PRNumber:             &pr,
+		CanonicalFormVersion: &cfv,
+		SignatureAlgorithm:   &algo,
+		SigningKeyID:         &kid,
+		TemporalBasis:        &tmpBasis,
+	}
+
+	_, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("v4-jcs should be accepted; got: %v", err)
 	}
 }

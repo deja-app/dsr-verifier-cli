@@ -21,6 +21,12 @@ import (
 // signing_algorithm) and, for R1, temporal_basis are present in the envelope —
 // the verifier returns an error for a v3 receipt that omits them.
 func CanonicalPayload(e *Envelope) (string, error) {
+	// Refuse unknown canonical forms before computing bytes.
+	// A silent downgrade would produce bytes the issuer never signed and report
+	// INVALID — misleading rather than honest. Failing here is actionable.
+	if err := e.ValidateFormVersion(); err != nil {
+		return "", err
+	}
 	switch {
 	case e.Type == TypeR1L:
 		// R1-L has a distinct canonical form from R1: candidate_count, highest_ccs,
@@ -52,19 +58,20 @@ func attributionCanonical(e *Envelope) (string, error) {
 	if e.PRNumber == nil {
 		return "", fmt.Errorf("attribution receipt missing pr_number")
 	}
-	// v3-jcs mandatory field presence check.
-	// The TypeScript issuer guarantees these three fields on every v3 R1 receipt.
-	// A v3 receipt missing any of them has been tampered with or was produced
-	// by a non-conforming issuer — reject before computing canonical bytes.
-	if e.FormVersion() == "v3-jcs" {
+	// v3-jcs and v4-jcs mandatory field presence check.
+	// The TypeScript issuer guarantees these three fields on every v3/v4 R1 receipt.
+	// A receipt missing any of them has been tampered with or was produced by a
+	// non-conforming issuer — reject before computing canonical bytes.
+	fv := e.FormVersion()
+	if fv == "v3-jcs" || fv == "v4-jcs" {
 		if e.SigningKeyID == nil {
-			return "", fmt.Errorf("v3-jcs attribution receipt missing required field: signing_key_id")
+			return "", fmt.Errorf("%s attribution receipt missing required field: signing_key_id", fv)
 		}
 		if e.SignatureAlgorithm == nil {
-			return "", fmt.Errorf("v3-jcs attribution receipt missing required field: signature_algorithm")
+			return "", fmt.Errorf("%s attribution receipt missing required field: signature_algorithm", fv)
 		}
 		if e.TemporalBasis == nil {
-			return "", fmt.Errorf("v3-jcs attribution receipt missing required field: temporal_basis")
+			return "", fmt.Errorf("%s attribution receipt missing required field: temporal_basis", fv)
 		}
 	}
 
@@ -142,6 +149,13 @@ func attributionCanonical(e *Envelope) (string, error) {
 	if e.AttributionMargin != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 5) {
 		m["attribution_margin"] = *e.AttributionMargin
 	}
+	// C23-part-a / v4-jcs: include the DSR spec version string in canonical bytes.
+	// Closes the relabeling-attack vector: the version field sorts last among
+	// all current R1 canonical keys (after temporal_basis alphabetically).
+	// v3-jcs is frozen — already-issued v3 receipts stay valid without version.
+	if fv == "v4-jcs" && e.DSRVersion != "" {
+		m["version"] = e.DSRVersion
+	}
 
 	return jcsSerialise(m)
 }
@@ -162,14 +176,15 @@ func resolutionCanonical(e *Envelope) (string, error) {
 	if e.TimeToResolutionMs == nil {
 		return "", fmt.Errorf("resolution receipt missing time_to_resolution_ms")
 	}
-	// v3-jcs mandatory signing identity (B6). temporal_basis is optional on R2
-	// (populated only when gate window anchored to deploy time via D5).
-	if e.FormVersion() == "v3-jcs" {
+	// v3-jcs and v4-jcs mandatory signing identity. temporal_basis is optional on
+	// R2 (populated only when gate window anchored to deploy time via D5).
+	rfv := e.FormVersion()
+	if rfv == "v3-jcs" || rfv == "v4-jcs" {
 		if e.SigningKeyID == nil {
-			return "", fmt.Errorf("v3-jcs resolution receipt missing required field: signing_key_id")
+			return "", fmt.Errorf("%s resolution receipt missing required field: signing_key_id", rfv)
 		}
 		if e.SignatureAlgorithm == nil {
-			return "", fmt.Errorf("v3-jcs resolution receipt missing required field: signature_algorithm")
+			return "", fmt.Errorf("%s resolution receipt missing required field: signature_algorithm", rfv)
 		}
 	}
 
@@ -198,6 +213,12 @@ func resolutionCanonical(e *Envelope) (string, error) {
 	}
 	if e.SignatureAlgorithm != nil {
 		m["signing_algorithm"] = *e.SignatureAlgorithm
+	}
+	// C23-part-a / v4-jcs: include the DSR spec version string in canonical bytes.
+	// For R2, "version" sorts after "vault_id" alphabetically (vault_id < version).
+	// v3-jcs is frozen — already-issued v3 R2 receipts stay valid without version.
+	if rfv == "v4-jcs" && e.DSRVersion != "" {
+		m["version"] = e.DSRVersion
 	}
 
 	return jcsSerialise(m)
