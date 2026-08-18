@@ -1,0 +1,21 @@
+{
+  "dsr_version": "DSR/1.0.4",
+  "type": "R1-N",
+  "receipt_id": "rcpt_parity_r1n_001",
+  "vault_id": "vlt_parity_test_0001",
+  "timestamp": "2026-08-18T12:00:00.000Z",
+  "issued_at": "2026-08-18T12:00:00.000Z",
+  "actor": "system",
+  "origin": "deja",
+  "signature": "Uo+U7n2XLpQ2e6ljstCxWMC61q2JFDWSrqiaxJ8VTFbmwYeZgenJYR7kLQkBsluXjXXhO2qKLEXVPdixNf2oBQ==",
+  "signature_algorithm": "ed25519-v1",
+  "signing_key_id": "parity-test-key-v1",
+  "canonical_form_version": null,
+  "highest_candidate_ccs": "0.3100",
+  "incident_id": "inc_parity_00000001",
+  "lookback_days": 30,
+  "prs_evaluated": 47,
+  "service_zone": "us-east-1",
+  "is_synthetic": null,
+  "prior_hash": null
+}

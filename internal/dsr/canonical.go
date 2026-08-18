@@ -182,7 +182,9 @@ func resolutionCanonical(e *Envelope) (string, error) {
 		return "", fmt.Errorf("resolution receipt missing time_to_resolution_ms")
 	}
 	// v3-jcs and v4-jcs mandatory signing identity. temporal_basis is optional on
-	// R2 (populated only when gate window anchored to deploy time via D5).
+	// R2 (populated only when gate window anchored to deploy time via D5 — the
+	// field is always included in canonical bytes when non-nil, matching the
+	// TypeScript canonicaliseResolutionReceiptJCS behaviour).
 	rfv := e.FormVersion()
 	if rfv == "v3-jcs" || rfv == "v4-jcs" {
 		if e.SigningKeyID == nil {
@@ -191,6 +193,15 @@ func resolutionCanonical(e *Envelope) (string, error) {
 		if e.SignatureAlgorithm == nil {
 			return "", fmt.Errorf("%s resolution receipt missing required field: signature_algorithm", rfv)
 		}
+	}
+
+	// issued_at: use explicit field when present; fall back to timestamp.
+	// Mirrors the TypeScript canonicaliseResolutionReceiptJCS which uses fields.issuedAt.
+	var r2IssuedAt string
+	if e.IssuedAt != nil {
+		r2IssuedAt = *e.IssuedAt
+	} else {
+		r2IssuedAt = e.Timestamp
 	}
 
 	m := map[string]any{
@@ -202,7 +213,7 @@ func resolutionCanonical(e *Envelope) (string, error) {
 		"gates_passed":           boolDeref(e.GatesPassed, false),
 		"incident_id":            *e.IncidentID,
 		"infra_gate_score":       strDeref(e.InfraGateScore, "0.0000"),
-		"issued_at":              e.Timestamp,
+		"issued_at":              r2IssuedAt,
 		"rate_gate_score":        strDeref(e.RateGateScore, "0.0000"),
 		"resolved_at":            *e.ResolvedAt,
 		"service_zone":           strDeref(e.ServiceZone, ""),
@@ -218,6 +229,13 @@ func resolutionCanonical(e *Envelope) (string, error) {
 	}
 	if e.SignatureAlgorithm != nil {
 		m["signing_algorithm"] = *e.SignatureAlgorithm
+	}
+	// D2 / v3-jcs: temporal_basis is optional on R2 (populated only when the
+	// resolution-gate window is anchored to deploy time via D5). Included in
+	// canonical bytes whenever non-nil, matching TypeScript canonicaliseResolutionReceiptJCS.
+	// Pre-D2 R2 receipts have nil temporal_basis and their canonical bytes are unchanged.
+	if e.TemporalBasis != nil {
+		m["temporal_basis"] = *e.TemporalBasis
 	}
 	// C23-part-a / v4-jcs: include the DSR spec version string in canonical bytes.
 	// For R2, "version" sorts after "vault_id" alphabetically (vault_id < version).

@@ -1,0 +1,21 @@
+{
+  "dsr_version": "DSR/1.0.5",
+  "type": "R1-L",
+  "receipt_id": "rcpt_parity_r1l_001",
+  "vault_id": "vlt_parity_test_0001",
+  "timestamp": "2026-08-18T12:00:00.000Z",
+  "issued_at": "2026-08-18T12:00:00.000Z",
+  "actor": "github:12345678",
+  "origin": "deja",
+  "signature": "2VQmAB788el9HbxxGF/kEbv1doaaPNAQhlsZ5mJz8tr9YspZnL9Ct3b7U8F/P3K7zbnm5vQhtvIWEuK3dAudDA==",
+  "signature_algorithm": "ed25519-v1",
+  "signing_key_id": "parity-test-key-v1",
+  "canonical_form_version": null,
+  "candidate_count": 3,
+  "highest_ccs": "0.6200",
+  "incident_id": "inc_parity_00000001",
+  "service_zone": "us-east-1",
+  "is_synthetic": null,
+  "attribution_margin": "0.0800",
+  "prior_hash": null
+}

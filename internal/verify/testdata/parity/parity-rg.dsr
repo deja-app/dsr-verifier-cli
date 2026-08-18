@@ -1,0 +1,19 @@
+{
+  "dsr_version": "DSR/1.0.2",
+  "type": "RG",
+  "receipt_id": "rcpt_parity_rg_001",
+  "vault_id": "",
+  "organization_id": "org_parity_test_0001",
+  "timestamp": "2026-08-18T12:00:00.000Z",
+  "issued_at": "2026-08-18T12:00:00.000Z",
+  "actor": "reviewer@deja.dev",
+  "origin": "deja",
+  "signature": "lf2lCi5TFC7vgy+q00owFOavp0J11ksskdDr8KnM3GQiVLYHYSW0pO3shDQNk4hHMsjRiH/xstapzas/mcU/BQ==",
+  "signature_algorithm": "ed25519-v1",
+  "signing_key_id": "parity-test-key-v1",
+  "canonical_form_version": null,
+  "change_type": "policy.update",
+  "prior_state_hash": "2e82228b587b5ebdbe80d79279a2cfa244d36372a1231196c17b85c9b778df77",
+  "new_state_hash": "800f8456d5841945763dab4ac7097967693d749868d29920fe4bd38662e1458d",
+  "prior_hash": null
+}

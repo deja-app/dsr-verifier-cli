@@ -59,6 +59,80 @@ jobs:
             -ldflags="-s -w -X github.com/deja-app/dsr-verifier-cli/internal/cli.BuildCommit=$(git rev-parse --short HEAD)" \
             ./cmd/dsr-verifier-cli
 
+  # ── Cross-implementation parity matrix ──────────────────────────────────────
+  # Runs every receipt type × canonical form version through BOTH the TypeScript
+  # issuer (in the wallow monorepo) and the Go verifier (this repo).
+  # Any byte difference in canonical form is caught here as a signature failure.
+  #
+  # The workflow:
+  #   1. Check out BOTH repos side-by-side.
+  #   2. Run the TypeScript generator (packages/api/scripts/generate-parity-vectors.ts)
+  #      to produce fresh signed vectors in a temp directory.
+  #   3. Diff against the committed vectors — any drift fails the job.
+  #   4. Run `go test ./internal/verify/ -run TestParityMatrix` to verify all
+  #      committed vectors pass signature verification in Go.
+  #
+  # This catches three classes of bug:
+  #   A. Canonical byte drift (Go != TypeScript for the same receipt type).
+  #   B. Stale committed vectors (generator updated but vectors not regenerated).
+  #   C. Regression in either implementation that breaks existing vectors.
+  parity-matrix:
+    name: Cross-implementation parity matrix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out dsr-verifier-cli
+        uses: actions/checkout@v4
+        with:
+          path: dsr-verifier-cli
+
+      - name: Check out wallow
+        uses: actions/checkout@v4
+        with:
+          repository: deja-app/wallow
+          path: wallow
+          # The wallow repo contains the TypeScript canonical form functions.
+          # Use a deploy key or PAT if the repo is private.
+          token: ${{ secrets.WALLOW_READ_TOKEN }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.3'
+          cache: true
+          cache-dependency-path: dsr-verifier-cli/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: wallow/package-lock.json
+
+      - name: Install wallow dependencies
+        run: npm ci --prefix wallow
+
+      - name: Generate parity vectors (TypeScript issuer)
+        run: |
+          cd wallow/packages/api
+          npx tsx scripts/generate-parity-vectors.ts \
+            --out-dir ${{ github.workspace }}/parity-fresh
+
+      - name: Check parity drift (committed vectors must be up-to-date)
+        run: |
+          diff -rq \
+            ${{ github.workspace }}/parity-fresh \
+            ${{ github.workspace }}/dsr-verifier-cli/internal/verify/testdata/parity || (
+            echo ""
+            echo "ERROR: committed parity vectors are stale or differ from the TypeScript issuer."
+            echo "Regenerate: cd dsr-verifier-cli && make generate-parity-vectors WALLOW_REPO=../wallow"
+            echo "Then commit the updated vectors and re-run this job."
+            exit 1
+          )
+          echo "parity-drift OK — committed vectors match TypeScript issuer output"
+
+      - name: Verify parity matrix in Go
+        run: |
+          cd dsr-verifier-cli
+          go test -v -count=1 -run 'TestParityMatrix' ./internal/verify/
+
   cross-compile:
     name: Cross-compile (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-latest
