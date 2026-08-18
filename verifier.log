@@ -1,1 +1,2 @@
 {"timestamp":"2026-07-08T09:38:55Z","command":"verify","file":"internal/verify/testdata/managed-r1.dsr","result":"verified","duration_ms":0,"verifier_version":"1.1.0"}
+{"timestamp":"2026-08-18T10:51:32Z","command":"verify","file":"/private/tmp/claude-501/-Users-macbookair-Desktop-upwork-ch-wallow/0ffa0577-19fb-4f9a-85e6-aa784a8d36f0/scratchpad/r_948e6956.dsr","result":"verified","duration_ms":0,"verifier_version":"1.6.3"}
