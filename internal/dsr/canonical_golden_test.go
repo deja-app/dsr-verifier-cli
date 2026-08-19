@@ -124,6 +124,142 @@ func TestGolden_RG_ExcludesPriorHash(t *testing.T) {
 	}
 }
 
+// ─── Confirmation RG canonical — "confirmation-rg-v1" ed25519-v1 ─────────────
+//
+// Confirmation RG receipts (R1L_CONFIRMED / R1L_REJECTED) use an 8-field form
+// with confirmed_receipt_id instead of prior_state_hash + new_state_hash.
+// They are dispatched by ConfirmedReceiptID != nil before governanceCanonical.
+//
+// Mirror of canonicaliseConfirmationRgReceipt() in
+// packages/api/src/utils/canonical-receipt.ts.
+
+func confirmationRGEnvelope() *dsr.Envelope {
+	cfv := "confirmation-rg-v1"
+	algo := "ed25519-v1"
+	kid := "deja-managed-v1"
+	changeType := "R1L_CONFIRMED"
+	confirmedID := "R1L-00000000-0000-4000-8000-000000000001"
+	issuedAt := "2026-08-01T00:00:00.000Z"
+	return &dsr.Envelope{
+		DSRVersion:           "DSR/1.0",
+		Type:                 dsr.TypeRG,
+		ReceiptID:            "RG-00000000-0000-4000-8000-000000000001",
+		OrganizationID:       "aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb",
+		Actor:                "user-uuid-reviewer",
+		Origin:               "staging",
+		Signature:            "placeholder",
+		IssuedAt:             &issuedAt,
+		ChangeType:           &changeType,
+		ConfirmedReceiptID:   &confirmedID,
+		CanonicalFormVersion: &cfv,
+		SignatureAlgorithm:   &algo,
+		SigningKeyID:         &kid,
+	}
+}
+
+func TestGolden_ConfirmationRG_CanonicalBytes(t *testing.T) {
+	e := confirmationRGEnvelope()
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+
+	// Field order (Unicode sort):
+	//   actor, change_type, confirmed_receipt_id, issued_at, organization_id,
+	//   receipt_id, type, version
+	want := `{"actor":"user-uuid-reviewer","change_type":"R1L_CONFIRMED",` +
+		`"confirmed_receipt_id":"R1L-00000000-0000-4000-8000-000000000001",` +
+		`"issued_at":"2026-08-01T00:00:00.000Z",` +
+		`"organization_id":"aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb",` +
+		`"receipt_id":"RG-00000000-0000-4000-8000-000000000001",` +
+		`"type":"RG","version":"DSR/1.0"}`
+
+	if canonical != want {
+		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
+	}
+	if len(canonical) != 309 {
+		t.Errorf("canonical length = %d, want 309", len(canonical))
+	}
+}
+
+func TestGolden_ConfirmationRG_SHA256(t *testing.T) {
+	e := confirmationRGEnvelope()
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	const wantHash = "a4968935b5a1405b04dd9d33862daa287255016bb15b80e62d4242eca89610cf"
+	if got := sha256Hex(canonical); got != wantHash {
+		t.Errorf("SHA-256\n got: %s\nwant: %s", got, wantHash)
+	}
+}
+
+func TestGolden_ConfirmationRG_ExcludesStateHashes(t *testing.T) {
+	e := confirmationRGEnvelope()
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	for _, excluded := range []string{"prior_state_hash", "new_state_hash", "vault_id", "prior_hash"} {
+		if strings.Contains(canonical, excluded) {
+			t.Errorf("confirmation RG canonical must not contain %q", excluded)
+		}
+	}
+}
+
+func TestGolden_ConfirmationRG_Rejected_DispatchRegression(t *testing.T) {
+	// Standard RG (no ConfirmedReceiptID) must still use governanceCanonical.
+	// This guards the dispatch: adding ConfirmedReceiptID must not change the
+	// canonical path for existing receipts without it.
+	e := rgMinimalEnvelope()
+	if e.ConfirmedReceiptID != nil {
+		t.Fatal("rgMinimalEnvelope must not have ConfirmedReceiptID set")
+	}
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("standard RG CanonicalPayload: %v", err)
+	}
+	// Standard RG canonical contains prior_state_hash — proof it used governanceCanonical
+	if !strings.Contains(canonical, "prior_state_hash") {
+		t.Error("standard RG canonical must contain prior_state_hash (governanceCanonical path)")
+	}
+}
+
+func TestGolden_ConfirmationRG_RejectedVariant_CanonicalBytes(t *testing.T) {
+	// R1L_REJECTED uses the same 8-field form; only change_type differs.
+	cfv := "confirmation-rg-v1"
+	algo := "ed25519-v1"
+	kid := "deja-managed-v1"
+	changeType := "R1L_REJECTED"
+	confirmedID := "R1L-00000000-0000-4000-8000-000000000001"
+	issuedAt := "2026-08-01T00:00:00.000Z"
+	e := &dsr.Envelope{
+		DSRVersion:           "DSR/1.0",
+		Type:                 dsr.TypeRG,
+		ReceiptID:            "RG-00000000-0000-4000-8000-000000000002",
+		OrganizationID:       "aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb",
+		Actor:                "user-uuid-reviewer",
+		Origin:               "staging",
+		Signature:            "placeholder",
+		IssuedAt:             &issuedAt,
+		ChangeType:           &changeType,
+		ConfirmedReceiptID:   &confirmedID,
+		CanonicalFormVersion: &cfv,
+		SignatureAlgorithm:   &algo,
+		SigningKeyID:         &kid,
+	}
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload: %v", err)
+	}
+	if !strings.Contains(canonical, `"change_type":"R1L_REJECTED"`) {
+		t.Errorf("R1L_REJECTED canonical must contain change_type=R1L_REJECTED; got: %s", canonical)
+	}
+	if !strings.Contains(canonical, `"confirmed_receipt_id"`) {
+		t.Errorf("R1L_REJECTED canonical must contain confirmed_receipt_id; got: %s", canonical)
+	}
+}
+
 // ─── R1 attribution canonical — v1-legacy sha256-legacy ──────────────────────
 
 func TestGolden_R1_Minimal_CanonicalBytes(t *testing.T) {

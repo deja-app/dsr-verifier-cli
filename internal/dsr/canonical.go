@@ -44,6 +44,12 @@ func CanonicalPayload(e *Envelope) (string, error) {
 		return attributionCanonical(e)
 	case IsResolutionType(e.Type):
 		return resolutionCanonical(e)
+	case IsGovernanceType(e.Type) && e.ConfirmedReceiptID != nil:
+		// Confirmation RG receipts (R1L_CONFIRMED / R1L_REJECTED) use an 8-field
+		// form with confirmed_receipt_id instead of prior_state_hash + new_state_hash.
+		// Dispatch on ConfirmedReceiptID presence so that old receipts without it
+		// still go to governanceCanonical and verify correctly.
+		return confirmationGovernanceCanonical(e)
 	case IsGovernanceType(e.Type):
 		return governanceCanonical(e)
 	default:
@@ -286,6 +292,47 @@ func governanceCanonical(e *Envelope) (string, error) {
 		"receipt_id":       e.ReceiptID,
 		"type":             e.Type,
 		"version":          e.DSRVersion,
+	}
+	return jcsSerialise(m)
+}
+
+// confirmationGovernanceCanonical builds the 8-field canonical form for
+// confirmation RG receipts (change_type R1L_CONFIRMED / R1L_REJECTED).
+//
+// These receipts are signed with Ed25519 (canonical_form_version "confirmation-rg-v1")
+// using confirmed_receipt_id in place of prior_state_hash + new_state_hash.
+//
+// Canonical field order (Unicode sort):
+//
+//	actor, change_type, confirmed_receipt_id, issued_at, organization_id,
+//	receipt_id, type, version
+//
+// Mirror of canonicaliseConfirmationRgReceipt() in
+// packages/api/src/utils/canonical-receipt.ts.
+func confirmationGovernanceCanonical(e *Envelope) (string, error) {
+	if e.ChangeType == nil {
+		return "", fmt.Errorf("confirmation governance receipt missing change_type")
+	}
+	if e.ConfirmedReceiptID == nil {
+		return "", fmt.Errorf("confirmation governance receipt missing confirmed_receipt_id")
+	}
+
+	var issuedAt string
+	if e.IssuedAt != nil {
+		issuedAt = *e.IssuedAt
+	} else {
+		issuedAt = e.Timestamp
+	}
+
+	m := map[string]any{
+		"actor":                e.Actor,
+		"change_type":          *e.ChangeType,
+		"confirmed_receipt_id": *e.ConfirmedReceiptID,
+		"issued_at":            issuedAt,
+		"organization_id":      e.OrganizationID,
+		"receipt_id":           e.ReceiptID,
+		"type":                 e.Type,
+		"version":              e.DSRVersion,
 	}
 	return jcsSerialise(m)
 }

@@ -112,9 +112,13 @@ type Envelope struct {
 	FailureReason           *string  `json:"failure_reason"`
 
 	// Governance fields (RG) — org-scoped, no vault_id
-	ChangeType     *string `json:"change_type"`
-	PriorStateHash *string `json:"prior_state_hash"`
-	NewStateHash   *string `json:"new_state_hash"`
+	ChangeType          *string `json:"change_type"`
+	PriorStateHash      *string `json:"prior_state_hash"`
+	NewStateHash        *string `json:"new_state_hash"`
+	// ConfirmedReceiptID is present only on confirmation RG receipts
+	// (change_type R1L_CONFIRMED / R1L_REJECTED). Its presence selects the
+	// 8-field confirmation canonical form in place of the 9-field standard form.
+	ConfirmedReceiptID  *string `json:"confirmed_receipt_id"`
 
 	// Resolution fields (R2, R2-F, R2-R)
 	AttributionReceiptID *string `json:"attribution_receipt_id"`
@@ -166,7 +170,7 @@ func (e *Envelope) FormVersion() string {
 // ValidateFormVersion returns an error when the envelope declares a
 // canonical_form_version this verifier does not implement.
 //
-// Implemented forms: v1-legacy, v2-jcs, v3-jcs, v4-jcs.
+// Implemented forms: v1-legacy, v2-jcs, v3-jcs, v4-jcs, confirmation-rg-v1.
 // Absent or empty canonical_form_version is accepted (treated as v1-legacy).
 //
 // A silent downgrade on an unknown form version would compute different bytes
@@ -176,12 +180,12 @@ func (e *Envelope) FormVersion() string {
 func (e *Envelope) ValidateFormVersion() error {
 	fv := e.FormVersion()
 	switch fv {
-	case "v1-legacy", "v2-jcs", "v3-jcs", "v4-jcs":
+	case "v1-legacy", "v2-jcs", "v3-jcs", "v4-jcs", "confirmation-rg-v1":
 		return nil
 	default:
 		return fmt.Errorf(
 			"unsupported canonical_form_version %q: this verifier implements "+
-				"v1-legacy, v2-jcs, v3-jcs, v4-jcs — upgrade the verifier to "+
+				"v1-legacy, v2-jcs, v3-jcs, v4-jcs, confirmation-rg-v1 — upgrade the verifier to "+
 				"check receipts issued under %q",
 			fv, fv,
 		)
