@@ -139,25 +139,40 @@ func attributionCanonical(e *Envelope) (string, error) {
 	if e.TemporalBasis != nil {
 		m["temporal_basis"] = *e.TemporalBasis
 	}
-	// DSR/1.0.4: actor (github:{id}), incident_id, signal_observation_hash.
-	// All three are omit-if-null and gated on version so pre-1.0.4 receipts
-	// are not affected even if the envelope carries these fields.
-	if e.Actor != "" && dsrVersionAtLeast(e.DSRVersion, 1, 0, 4) {
+	// Five conditional fields — single rule: omit-if-null. No version gate.
+	//
+	// The TypeScript issuer applies pure null checks with no dsr_version gate and no
+	// canonical_form_version gate for all five fields, across all canonical functions
+	// (canonicaliseReceipt / canonicaliseReceiptJCS / canonicaliseReceiptJCSv4):
+	//
+	//   if (fields.actor != null)                raw.actor = fields.actor
+	//   if (fields.incidentId != null)           raw.incident_id = fields.incidentId
+	//   if (fields.signalObservationHash != null) raw.signal_observation_hash = ...
+	//   if (fields.scoringVersion != null)       raw.scoring_version = fields.scoringVersion
+	//   if (fields.attributionMargin != null)    raw.attribution_margin = ...
+	//
+	// The Go verifier must match exactly. The old implementation used
+	// dsrVersionAtLeast(1, 0, 4/5) which diverges from TypeScript for any receipt
+	// where the field is non-null but DSR version is below the gate threshold.
+	//
+	// Pre-fix receipts where actor was null (e.g. old DSR/1.0 receipts issued before
+	// actor existed as a field) are unaffected — null → omitted in both TypeScript and Go.
+	// Only a receipt where a field is non-null but DSR version is below the old gate
+	// would have been incorrectly verified. That scenario occurs in the parity matrix
+	// vectors (DSR/1.0.5, v1-legacy form) where actor is non-null.
+	if e.Actor != "" {
 		m["actor"] = e.Actor
 	}
-	if e.IncidentID != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 4) {
+	if e.IncidentID != nil {
 		m["incident_id"] = *e.IncidentID
 	}
-	if e.SignalObservationHash != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 4) {
+	if e.SignalObservationHash != nil {
 		m["signal_observation_hash"] = *e.SignalObservationHash
 	}
-	// DSR/1.0.5: scoring_version and attribution_margin. Both omit-if-null.
-	// scoring_version sorts between schema_stability_score and service_zone.
-	// attribution_margin sorts between anchoring_basis and ccs_score.
-	if e.ScoringVersion != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 5) {
+	if e.ScoringVersion != nil {
 		m["scoring_version"] = *e.ScoringVersion
 	}
-	if e.AttributionMargin != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 5) {
+	if e.AttributionMargin != nil {
 		m["attribution_margin"] = *e.AttributionMargin
 	}
 	// C23-part-a / v4-jcs: include the DSR spec version string in canonical bytes.

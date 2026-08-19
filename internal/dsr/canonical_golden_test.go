@@ -264,6 +264,11 @@ func TestGolden_ConfirmationRG_RejectedVariant_CanonicalBytes(t *testing.T) {
 
 func TestGolden_R1_Minimal_CanonicalBytes(t *testing.T) {
 	// 9-field minimal: no optional fields. Pre-C3 receipt shape.
+	// This is a v1-legacy receipt (no canonical_form_version). For v1-legacy,
+	// the five JCS-era conditional fields (actor, incident_id, signal_obs_hash,
+	// scoring_version, attribution_margin) are not part of the canonical form —
+	// the TypeScript v1-legacy function (canonicaliseReceipt) predates them.
+	// Actor is set to verify it is correctly excluded from v1-legacy canonical bytes.
 	errorClass := (*string)(nil)
 	missingField := (*string)(nil)
 	_ = errorClass
@@ -275,7 +280,7 @@ func TestGolden_R1_Minimal_CanonicalBytes(t *testing.T) {
 		ReceiptID:   "rcpt-minimal",
 		VaultID:     "vlt-test",
 		Timestamp:   "2026-01-01T00:00:00.000Z",
-		Actor:       "actor@example.com",
+		Actor:       "", // empty string → omitted (same as null). Real DSR/1.0 receipts had no actor set.
 		Origin:      "github",
 		Signature:   "placeholder",
 		CCSScore:    strPtr("0.8750"),
@@ -314,7 +319,7 @@ func TestGolden_R1_Minimal_SHA256(t *testing.T) {
 		ReceiptID:   "rcpt-minimal",
 		VaultID:     "vlt-test",
 		Timestamp:   "2026-01-01T00:00:00.000Z",
-		Actor:       "actor@example.com",
+		Actor:       "", // empty → omitted; SHA-256 unchanged
 		Origin:      "github",
 		Signature:   "placeholder",
 		CCSScore:    strPtr("0.8750"),
@@ -336,8 +341,11 @@ func TestGolden_R1_Minimal_SHA256(t *testing.T) {
 }
 
 func TestGolden_R1_Full_CanonicalBytes(t *testing.T) {
-	// 14-field: all optional fields including anchoring_basis, temporal_basis.
+	// 14-field: all optional non-actor fields including anchoring_basis, temporal_basis.
 	// Cross-checks that the Go CLI includes both fields (absent in v1.1.1).
+	// Actor is empty (null equivalent): real DSR/1.0 receipts had no actor set.
+	// Rule: actor is omit-if-null — empty string → omitted, SHA-256 unchanged.
+	// See TestGolden_R1_DSR104_CanonicalBytes for the actor inclusion vector.
 	isInternalVal := false
 	e := &dsr.Envelope{
 		DSRVersion:           "DSR/1.0",
@@ -345,7 +353,7 @@ func TestGolden_R1_Full_CanonicalBytes(t *testing.T) {
 		ReceiptID:            "rcpt-full",
 		VaultID:              "vlt-test",
 		Timestamp:            "2026-01-01T00:00:00.000Z",
-		Actor:                "actor@example.com",
+		Actor:                "", // empty → omitted; real DSR/1.0 receipts had no actor
 		Origin:               "github",
 		Signature:            "placeholder",
 		CCSScore:             strPtr("0.8750"),
@@ -393,7 +401,7 @@ func TestGolden_R1_Full_SHA256(t *testing.T) {
 		ReceiptID:            "rcpt-full",
 		VaultID:              "vlt-test",
 		Timestamp:            "2026-01-01T00:00:00.000Z",
-		Actor:                "actor@example.com",
+		Actor:                "", // empty → omitted; SHA-256 unchanged
 		Origin:               "github",
 		Signature:            "placeholder",
 		CCSScore:             strPtr("0.8750"),
@@ -420,13 +428,17 @@ func TestGolden_R1_Full_SHA256(t *testing.T) {
 }
 
 func TestGolden_R1_ExcludesVaultID(t *testing.T) {
+	// Verifies that envelope routing fields (vault_id, organization_id, prior_hash)
+	// are never part of the signed canonical payload. Actor is now a legitimate R1
+	// canonical field (omit-if-null rule) and thus excluded from this exclusion check —
+	// it correctly appears in canonical bytes when non-empty.
 	e := &dsr.Envelope{
 		DSRVersion:  "DSR/1.0",
 		Type:        dsr.TypeR1,
 		ReceiptID:   "rcpt-test",
 		VaultID:     "vlt-test",
 		Timestamp:   "2026-01-01T00:00:00.000Z",
-		Actor:       "actor@example.com",
+		Actor:       "actor@example.com", // non-empty → actor DOES appear in canonical (correct)
 		Origin:      "github",
 		Signature:   "placeholder",
 		CCSScore:    strPtr("0.8750"),
@@ -438,10 +450,15 @@ func TestGolden_R1_ExcludesVaultID(t *testing.T) {
 		ServiceZone: strPtr("zone-prod-1"),
 	}
 	canonical, _ := dsr.CanonicalPayload(e)
-	for _, excluded := range []string{"vault_id", "actor", "organization_id", "previous_hash"} {
+	// vault_id, organization_id, prior_hash must never appear in R1 canonical bytes.
+	for _, excluded := range []string{"vault_id", "organization_id", "previous_hash"} {
 		if strings.Contains(canonical, excluded) {
 			t.Errorf("R1 canonical form must not contain %q", excluded)
 		}
+	}
+	// actor IS a signed field when non-empty — verify it appears.
+	if !strings.Contains(canonical, `"actor":"actor@example.com"`) {
+		t.Errorf("actor must appear in R1 canonical bytes when non-empty; got: %s", canonical)
 	}
 }
 
@@ -808,13 +825,20 @@ func TestGolden_R1_DSR104_CanonicalBytes(t *testing.T) {
 	}
 }
 
-func TestGolden_R1_Pre104_ActorAndIncidentIDExcluded(t *testing.T) {
-	// Pre-1.0.4 R1 receipts must NOT include actor, incident_id, or
-	// signal_observation_hash even if those fields are set in the envelope.
+func TestGolden_R1_Pre104_ActorAndIncidentIDIncludedWhenNonNull(t *testing.T) {
+	// Parity fix (issuer/verifier agreement): actor, incident_id, and
+	// signal_observation_hash are omit-if-null with NO version gate.
+	// A pre-1.0.4 R1 receipt with non-null values for these fields MUST include
+	// them in canonical bytes — the TypeScript issuer applies a pure null check
+	// and no dsr_version gate. Any version gate in the verifier would reconstruct
+	// different bytes from what the issuer signed, causing a false INVALID.
+	//
+	// DSRVersion is not part of the R1 canonical payload, so a DSR/1.0 envelope
+	// with these fields set produces byte-identical output to the DSR/1.0.4 vector.
 	hash := testSignalObsHash
 	incID := testIncidentID
 	e := &dsr.Envelope{
-		DSRVersion:            "DSR/1.0",
+		DSRVersion:            "DSR/1.0", // pre-1.0.4 — no longer changes canonical bytes
 		Type:                  dsr.TypeR1,
 		ReceiptID:             "rcpt-pre-104",
 		VaultID:               "vlt-test",
@@ -836,10 +860,20 @@ func TestGolden_R1_Pre104_ActorAndIncidentIDExcluded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CanonicalPayload: %v", err)
 	}
-	for _, excluded := range []string{"actor", "incident_id", "signal_observation_hash"} {
-		if strings.Contains(canonical, excluded) {
-			t.Errorf("pre-1.0.4 R1 canonical must NOT contain %q; got: %s", excluded, canonical)
+	// All three fields must appear — single rule: omit-if-null, no version gate.
+	for _, required := range []string{"actor", "incident_id", "signal_observation_hash"} {
+		if !strings.Contains(canonical, required) {
+			t.Errorf("R1 canonical MUST contain %q when non-null (no version gate); got: %s", required, canonical)
 		}
+	}
+	// Canonical bytes are identical to the DSR/1.0.4 vector (version not in R1 canonical).
+	want := `{"actor":"github:86881100","ccs_score":"0.8750","confidence":"HIGH",` +
+		`"error_class":null,"incident_id":"INC-00000000-0000-0000-0000-000000000001",` +
+		`"issued_at":"2026-01-01T00:00:00.000Z","matched":"true","missing_field":null,` +
+		`"pr_number":42,"repository":"acme-corp/payments","service_zone":"zone-prod-1",` +
+		`"signal_observation_hash":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"}`
+	if canonical != want {
+		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
 	}
 }
 
@@ -1012,13 +1046,16 @@ func TestGolden_R1_DSR105_CanonicalBytes(t *testing.T) {
 	}
 }
 
-func TestGolden_R1_Pre105_ScoringVersionAndMarginExcluded(t *testing.T) {
-	// Pre-1.0.5 R1 receipts must NOT include scoring_version or attribution_margin
-	// even if those fields are present in the envelope.
+func TestGolden_R1_Pre105_ScoringVersionAndMarginIncludedWhenNonNull(t *testing.T) {
+	// Parity fix (issuer/verifier agreement): scoring_version and attribution_margin
+	// are omit-if-null with NO version gate. A pre-1.0.5 R1 receipt with non-null
+	// values for these fields MUST include them in canonical bytes — the TypeScript
+	// issuer applies a pure null check with no dsr_version gate. Any version gate
+	// in the verifier would produce different canonical bytes, causing a false INVALID.
 	sv := "1.0.5"
 	margin := "0.0500"
 	e := &dsr.Envelope{
-		DSRVersion:        "DSR/1.0.4",
+		DSRVersion:        "DSR/1.0.4", // pre-1.0.5 — no longer changes canonical bytes
 		Type:              dsr.TypeR1,
 		ReceiptID:         "rcpt-pre-105",
 		VaultID:           "vlt-test",
@@ -1042,10 +1079,20 @@ func TestGolden_R1_Pre105_ScoringVersionAndMarginExcluded(t *testing.T) {
 		t.Fatalf("CanonicalPayload: %v", err)
 	}
 
-	for _, excluded := range []string{"scoring_version", "attribution_margin"} {
-		if strings.Contains(canonical, excluded) {
-			t.Errorf("pre-1.0.5 R1 canonical must NOT contain %q; got: %s", excluded, canonical)
+	// Both fields must appear — single rule: omit-if-null, no version gate.
+	for _, required := range []string{"scoring_version", "attribution_margin"} {
+		if !strings.Contains(canonical, required) {
+			t.Errorf("R1 canonical MUST contain %q when non-null (no version gate); got: %s", required, canonical)
 		}
+	}
+	// Actor is non-empty → also included. No incident_id or signal_obs → excluded.
+	want := `{"actor":"github:86881100","attribution_margin":"0.0500","ccs_score":"0.8750",` +
+		`"confidence":"HIGH","error_class":null,` +
+		`"issued_at":"2026-01-01T00:00:00.000Z","matched":"true","missing_field":null,` +
+		`"pr_number":42,"repository":"acme-corp/payments",` +
+		`"scoring_version":"1.0.5","service_zone":"zone-prod-1"}`
+	if canonical != want {
+		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
 	}
 }
 

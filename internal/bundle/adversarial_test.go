@@ -14,10 +14,13 @@ package bundle_test
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 
 	"github.com/deja-app/dsr-verifier-cli/internal/bundle"
+	"github.com/deja-app/dsr-verifier-cli/internal/dsr"
 	"github.com/deja-app/dsr-verifier-cli/internal/verify"
 )
 
@@ -124,10 +127,55 @@ func TestAdversarial_ForgedSignature_Rejected(t *testing.T) {
 // an attacker changes dsr_version to claim a newer spec without possessing
 // the private key. The canonical form includes dsr_version, so the
 // existing signature does not cover the new value.
+//
+// Detection requires a canonical form that includes the version field.
+// v1-legacy / v2-jcs / v3-jcs do NOT include dsr_version in canonical bytes.
+// v4-jcs adds "version" → the signed bytes cover the version string.
+//
+// The test uses a v4-jcs receipt: sign at DSR/1.0.2, relabel to DSR/1.0.6.
+// Because "version":"DSR/1.0.2" was signed, "version":"DSR/1.0.6" produces
+// different canonical bytes → signature is invalid → tamper is caught.
+func minimalR1V4JCS(t *testing.T, id string, priv ed25519.PrivateKey) *dsr.Envelope {
+	t.Helper()
+	algo := dsr.AlgoED25519V1
+	cfv := "v4-jcs"
+	tb := "merged_fallback"
+	keyID := "key_bundle_test"
+	e := &dsr.Envelope{
+		DSRVersion:           "DSR/1.0.2",
+		Type:                 "R1",
+		ReceiptID:            id,
+		VaultID:              "vlt_bundle_test",
+		Timestamp:            "2026-06-01T10:00:00Z",
+		Actor:                "author@example.com",
+		Origin:               "github.com/test/repo",
+		Repository:           pStr("test/repo"),
+		PRNumber:             pI64(42),
+		CCSScore:             pStr("0.8750"),
+		Confidence:           pStr("high"),
+		Matched:              pStr("true"),
+		ServiceZone:          pStr("payments"),
+		SignatureAlgorithm:   &algo,
+		CanonicalFormVersion: &cfv,
+		SigningKeyID:         &keyID,
+		TemporalBasis:        &tb,
+	}
+	canonical, err := dsr.CanonicalPayload(e)
+	if err != nil {
+		t.Fatalf("CanonicalPayload (v4-jcs): %v", err)
+	}
+	sig := ed25519.Sign(priv, []byte(canonical))
+	e.Signature = base64.StdEncoding.EncodeToString(sig)
+	return e
+}
+
 func TestAdversarial_RelabeledDSRVersion_SignatureRejected(t *testing.T) {
 	pub, priv := makeEd25519Pair(t)
 
-	receipt := minimalR1(t, "rcpt_relabeled", priv) // signed as "DSR/1.0.2"
+	// Use v4-jcs so that dsr_version is in canonical bytes.
+	// v1-legacy / v2-jcs / v3-jcs do not include version → relabeling is
+	// undetectable there. v4-jcs seals the version inside the signature.
+	receipt := minimalR1V4JCS(t, "rcpt_relabeled", priv) // signed as "DSR/1.0.2"
 
 	// Patch dsr_version without re-signing.
 	var raw map[string]interface{}
@@ -158,7 +206,7 @@ func TestAdversarial_RelabeledDSRVersion_SignatureRejected(t *testing.T) {
 	}
 	res := bundle.VerifyBundle(b, provided)
 	if res.PerReceipt.Failed == 0 {
-		t.Errorf("relabeled dsr_version must be caught by signature check: per_receipt_failed=%d",
+		t.Errorf("relabeled dsr_version must be caught by v4-jcs signature check: per_receipt_failed=%d",
 			res.PerReceipt.Failed)
 	}
 }

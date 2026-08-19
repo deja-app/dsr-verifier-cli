@@ -9,9 +9,12 @@ package verify_test
 // produces different bytes from the TypeScript issuer for that receipt type +
 // canonical-form-version combination.
 //
-// Matrix covered (11 vectors):
+// Matrix covered (12 vectors):
 //
 //   R1  × {v1-legacy, v2-jcs, v3-jcs, v4-jcs}
+//   R1  (null-conditionals) — actor non-null; incident_id, signal_observation_hash,
+//       scoring_version, attribution_margin all null → excluded from canonical bytes.
+//       Proves the "condition does NOT hold" direction for all five conditional fields.
 //   R2  × {v1-legacy, v2-jcs, v3-jcs, v4-jcs}
 //   R1-L × (single canonical form)
 //   R1-N × (single canonical form)
@@ -70,6 +73,12 @@ func TestParityMatrix(t *testing.T) {
 		{name: "R1/v2-jcs", file: "parity-r1-v2-jcs.dsr", wantCFV: "v2-jcs"},
 		{name: "R1/v3-jcs", file: "parity-r1-v3-jcs.dsr", wantCFV: "v3-jcs"},
 		{name: "R1/v4-jcs", file: "parity-r1-v4-jcs.dsr", wantCFV: "v4-jcs"},
+		// Null-conditional fields — proves "omit-if-null" for the five conditional fields.
+		// actor is non-null (required); incident_id, signal_observation_hash,
+		// scoring_version, attribution_margin are all null → excluded from canonical bytes.
+		// This is the "condition does NOT hold" parity vector that closes card
+		// "Do issuer and verifier agree on when conditional R1 fields enter the canonical form?"
+		{name: "R1/null-conditionals", file: "parity-r1-null-conditionals.dsr", wantCFV: "v3-jcs"},
 
 		// R2 resolution receipts — one per canonical form version.
 		{name: "R2/v1-legacy", file: "parity-r2-v1-legacy.dsr", wantCFV: "v1-legacy"},
