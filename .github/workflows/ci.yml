@@ -17,6 +17,8 @@ jobs:
         go: ['1.22.3', '1.23.x']
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ github.token }}
 
       - uses: actions/setup-go@v5
         with:
@@ -83,6 +85,7 @@ jobs:
       - name: Check out dsr-verifier-cli
         uses: actions/checkout@v4
         with:
+          token: ${{ github.token }}
           path: dsr-verifier-cli
 
       - name: Check out wallow
@@ -102,7 +105,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: wallow/package-lock.json
 
@@ -155,6 +158,8 @@ jobs:
       GOARCH: ${{ matrix.goarch }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ github.token }}
 
       - uses: actions/setup-go@v5
         with:

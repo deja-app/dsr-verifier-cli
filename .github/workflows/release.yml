@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ github.token }}
 
       - uses: actions/setup-go@v5
         with:
@@ -67,6 +69,8 @@ jobs:
       GOARCH: ${{ matrix.goarch }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ github.token }}
 
       - uses: actions/setup-go@v5
         with:
@@ -117,6 +121,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ github.token }}
 
       - name: Download all archives
         uses: actions/download-artifact@v4
