@@ -451,13 +451,13 @@ func lowConfidenceCanonical(e *Envelope) (string, error) {
 	if e.IncidentID != nil {
 		m["incident_id"] = *e.IncidentID
 	}
-	// CR-1 mirror: TypeScript canonicaliseReceiptJCS uses `=== true` for
-	// is_synthetic, so the field is included ONLY when genuinely true.
-	// The DB column is boolean NOT NULL DEFAULT false, meaning normal receipts
-	// read as false at verify time. Including is_synthetic:false would produce
-	// bytes the issuer never signed — every non-synthetic R1 would INVALID.
-	if e.IsSynthetic != nil && *e.IsSynthetic {
-		m["is_synthetic"] = true
+	// CR-1 mirror (R1-L): TypeScript canonicaliseLowConfidenceReceipt uses
+	// `if (fields.isSynthetic != null)` — it includes is_synthetic:false for
+	// real (non-synthetic) receipts where the field is explicitly set.
+	// This differs from R1 attribution which uses `=== true`. Matching the
+	// TypeScript != null semantics: include whenever the envelope field is present.
+	if e.IsSynthetic != nil {
+		m["is_synthetic"] = *e.IsSynthetic
 	}
 	// DSR/1.0.2+: actor is the GitHub numeric user ID of the top-candidate PR author.
 	// Gated on version so that pre-1.0.2 receipts with an actor field in the envelope
@@ -532,13 +532,12 @@ func noAttributionCanonical(e *Envelope) (string, error) {
 		m["incident_id"] = *e.IncidentID
 	}
 	// DSR/1.0.1+: only included when set — backward compatible with pre-1.0.1 receipts.
-	// CR-1 mirror: TypeScript canonicaliseReceiptJCS uses `=== true` for
-	// is_synthetic, so the field is included ONLY when genuinely true.
-	// The DB column is boolean NOT NULL DEFAULT false, meaning normal receipts
-	// read as false at verify time. Including is_synthetic:false would produce
-	// bytes the issuer never signed — every non-synthetic R1 would INVALID.
-	if e.IsSynthetic != nil && *e.IsSynthetic {
-		m["is_synthetic"] = true
+	// CR-1 mirror (R1-N): TypeScript canonicaliseNoAttributionReceipt uses
+	// `if (fields.isSynthetic != null)` — includes is_synthetic:false for
+	// real receipts where the field is explicitly set. Same semantics as R1-L;
+	// both differ from R1 attribution which gates on `=== true`.
+	if e.IsSynthetic != nil {
+		m["is_synthetic"] = *e.IsSynthetic
 	}
 	// DSR/1.0.4: signal_observation_hash.
 	if e.SignalObservationHash != nil && dsrVersionAtLeast(e.DSRVersion, 1, 0, 4) {
