@@ -37,9 +37,16 @@ func CanonicalPayload(e *Envelope) (string, error) {
 		// carries highest_candidate_ccs, lookback_days, prs_evaluated, receipt_id.
 		return noAttributionCanonical(e)
 	case e.Type == TypeRV:
-		// RV has a 13-field form including a checks_passed array; it never falls
-		// to otherCanonical (which only carries 6 fields and would misverify).
-		return rvCanonical(e)
+		// Two RV sub-types share the "RV" type string but use different canonical forms.
+		// RVType ("rv-i" / "rv-f") is present only on integrity-monitor run receipts.
+		// Absent RVType → manual verifier receipt (sde_verification_receipts).
+		if e.RVType != nil {
+			return rvRunCanonical(e)
+		}
+		return rvManualCanonical(e)
+	case e.Type == TypeRE:
+		// RE (engagement receipts) use a 14-field signed canonical form.
+		return reCanonical(e)
 	case IsAttributionType(e.Type):
 		return attributionCanonical(e)
 	case IsResolutionType(e.Type):
@@ -364,7 +371,8 @@ func otherCanonical(e *Envelope) (string, error) {
 	return jcsSerialise(m)
 }
 
-// rvCanonical builds the 13-field canonical form for RV (verification run) receipts.
+// rvRunCanonical builds the 13-field canonical form for RV integrity-monitor run
+// receipts (rv_type = "rv-i" | "rv-f").
 //
 // Field order (Unicode sort):
 //
@@ -377,7 +385,7 @@ func otherCanonical(e *Envelope) (string, error) {
 // failed_check_type and failure_reason are null on passing runs.
 //
 // issued_at: uses the explicit IssuedAt field; falls back to Timestamp.
-func rvCanonical(e *Envelope) (string, error) {
+func rvRunCanonical(e *Envelope) (string, error) {
 	var issuedAt string
 	if e.IssuedAt != nil {
 		issuedAt = *e.IssuedAt
@@ -407,6 +415,110 @@ func rvCanonical(e *Envelope) (string, error) {
 		"verification_result":       strDeref(e.VerificationResult, ""),
 		"verification_run_id":       strDeref(e.VerificationRunID, ""),
 		"verification_started_at":   strDeref(e.VerificationStartedAt, ""),
+	}
+	return jcsSerialise(m)
+}
+
+// rvManualCanonical builds the 14-field canonical form for RV manual-verifier
+// receipts (rv_type absent; issued by sde_verification_receipts via
+// verification-receipt-issuer.ts).
+//
+// Field order (Unicode sort):
+//
+//	actor, engagement_id, invalid_count, issued_at, previous_hash, receipt_id,
+//	type, valid_count, vault_id, verification_result, verified_receipt_count,
+//	verifier_client, verifier_identity_hash, version
+//
+// previous_hash is null for the first receipt in a vault's chain; thereafter it
+// holds the Ed25519 signature (base64) of the prior RV receipt for this vault.
+//
+// Mirror of canonicaliseVerificationReceipt() in
+// packages/api/src/utils/canonical-receipt.ts.
+func rvManualCanonical(e *Envelope) (string, error) {
+	var issuedAt string
+	if e.IssuedAt != nil {
+		issuedAt = *e.IssuedAt
+	} else {
+		issuedAt = e.Timestamp
+	}
+	var validCount, invalidCount, verifiedCount int64
+	if e.ValidCount != nil {
+		validCount = *e.ValidCount
+	}
+	if e.InvalidCount != nil {
+		invalidCount = *e.InvalidCount
+	}
+	if e.VerifiedReceiptCount != nil {
+		verifiedCount = *e.VerifiedReceiptCount
+	}
+	m := map[string]any{
+		"actor":                  e.Actor,
+		"engagement_id":          anyNullableStr(e.EngagementID),
+		"invalid_count":          invalidCount,
+		"issued_at":              issuedAt,
+		"previous_hash":          anyNullableStr(e.PreviousHash),
+		"receipt_id":             e.ReceiptID,
+		"type":                   e.Type,
+		"valid_count":            validCount,
+		"vault_id":               e.VaultID,
+		"verification_result":    strDeref(e.VerificationResult, ""),
+		"verified_receipt_count": verifiedCount,
+		"verifier_client":        strDeref(e.VerifierClient, ""),
+		"verifier_identity_hash": strDeref(e.VerifierIdentityHash, ""),
+		"version":                e.DSRVersion,
+	}
+	return jcsSerialise(m)
+}
+
+// reCanonical builds the 14-field canonical form for RE (engagement) receipts.
+//
+// Field order (Unicode sort):
+//
+//	actor, engagement_id, expires_at, issued_at, permissions, prior_hash,
+//	receipt_id, receipts_in_scope, recipient_hash, revoked_at, scope_hash,
+//	type, vault_id, version
+//
+// permissions is a JSON array of strings, sorted at issuance so canonical bytes
+// are stable regardless of the order the caller supplies them.
+// prior_hash is null for the first RE receipt in a vault's chain.
+// revoked_at is null on active (non-revoked) engagements.
+//
+// Mirror of canonicaliseEngagementReceipt() in
+// packages/api/src/utils/canonical-receipt.ts.
+func reCanonical(e *Envelope) (string, error) {
+	var issuedAt string
+	if e.IssuedAt != nil {
+		issuedAt = *e.IssuedAt
+	} else {
+		issuedAt = e.Timestamp
+	}
+	var receiptsInScope int64
+	if e.ReceiptsInScope != nil {
+		receiptsInScope = *e.ReceiptsInScope
+	}
+	perms := e.Permissions
+	if perms == nil {
+		perms = []string{}
+	}
+	sorted := make([]string, len(perms))
+	copy(sorted, perms)
+	sort.Strings(sorted)
+
+	m := map[string]any{
+		"actor":            e.Actor,
+		"engagement_id":    strDeref(e.EngagementID, ""),
+		"expires_at":       strDeref(e.ExpiresAt, ""),
+		"issued_at":        issuedAt,
+		"permissions":      sorted,
+		"prior_hash":       anyNullableStr(e.PriorHash),
+		"receipt_id":       e.ReceiptID,
+		"receipts_in_scope": receiptsInScope,
+		"recipient_hash":   strDeref(e.RecipientHash, ""),
+		"revoked_at":       anyNullableStr(e.RevokedAt),
+		"scope_hash":       strDeref(e.ScopeHash, ""),
+		"type":             e.Type,
+		"vault_id":         e.VaultID,
+		"version":          e.DSRVersion,
 	}
 	return jcsSerialise(m)
 }

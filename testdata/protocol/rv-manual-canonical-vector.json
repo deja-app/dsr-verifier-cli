@@ -1,0 +1,38 @@
+{
+  "_comment": "AUTHORITATIVE protocol test vector for the RV manual-verifier canonical form. Issued by sde_verification_receipts via verification-receipt-issuer.ts (canonicaliseVerificationReceipt in packages/api/src/utils/canonical-receipt.ts). The Go CLI (rvManualCanonical in internal/dsr/canonical.go) must produce byte-identical output for this input. Distinguishing marker: rv_type is absent (null) — integrity-monitor run receipts have rv_type present.",
+  "_spec": "canonicaliseVerificationReceipt / rvManualCanonical — v1-legacy: sort all keys by Unicode code-point order, JSON.stringify compact.",
+  "input": {
+    "actor": "verifier_abc123def456",
+    "engagementId": "ENG-01HWTEST0001",
+    "invalidCount": 0,
+    "issuedAt": "2026-08-22T10:00:00.000Z",
+    "previousHash": null,
+    "receiptId": "RV-550e8400-e29b-41d4-a716-446655440000",
+    "type": "RV",
+    "validCount": 12,
+    "vaultId": "550e8400-e29b-41d4-a716-446655440001",
+    "verificationResult": "valid",
+    "verifiedReceiptCount": 12,
+    "verifierClient": "deja-verifier-cli/0.9.0",
+    "verifierIdentityHash": "verifier_abc123def456",
+    "version": "DSR/1.0"
+  },
+  "wire_names": {
+    "actor": "verifier_abc123def456",
+    "engagement_id": "ENG-01HWTEST0001",
+    "invalid_count": 0,
+    "issued_at": "2026-08-22T10:00:00.000Z",
+    "previous_hash": null,
+    "receipt_id": "RV-550e8400-e29b-41d4-a716-446655440000",
+    "type": "RV",
+    "valid_count": 12,
+    "vault_id": "550e8400-e29b-41d4-a716-446655440001",
+    "verification_result": "valid",
+    "verified_receipt_count": 12,
+    "verifier_client": "deja-verifier-cli/0.9.0",
+    "verifier_identity_hash": "verifier_abc123def456",
+    "version": "DSR/1.0"
+  },
+  "canonical_json": "{\"actor\":\"verifier_abc123def456\",\"engagement_id\":\"ENG-01HWTEST0001\",\"invalid_count\":0,\"issued_at\":\"2026-08-22T10:00:00.000Z\",\"previous_hash\":null,\"receipt_id\":\"RV-550e8400-e29b-41d4-a716-446655440000\",\"type\":\"RV\",\"valid_count\":12,\"vault_id\":\"550e8400-e29b-41d4-a716-446655440001\",\"verification_result\":\"valid\",\"verified_receipt_count\":12,\"verifier_client\":\"deja-verifier-cli/0.9.0\",\"verifier_identity_hash\":\"verifier_abc123def456\",\"version\":\"DSR/1.0\"}",
+  "canonical_sha256": "c5fd8989057f6964e476f53c8525c195fed14493f9d7358aa2b981c07c24894b"
+}

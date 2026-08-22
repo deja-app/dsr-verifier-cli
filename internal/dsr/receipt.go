@@ -99,7 +99,13 @@ type Envelope struct {
 	LookbackDays        *int64  `json:"lookback_days"`
 	PrsEvaluated        *int64  `json:"prs_evaluated"`
 
-	// Verification receipt fields (RV only)
+	// Shared RV/RE field
+	// EngagementID is the engagement scope identifier carried by both RV-manual
+	// and RE receipts (field name "engagement_id" on the wire).
+	EngagementID *string `json:"engagement_id"`
+
+	// Verification receipt fields (RV — integrity-monitor sub-type only)
+	// Present when rv_type = "rv-i" | "rv-f". Absent on manual verifier receipts.
 	RVType                  *string  `json:"rv_type"`
 	VerificationRunID       *string  `json:"verification_run_id"`
 	VerificationMode        *string  `json:"verification_mode"`
@@ -110,6 +116,25 @@ type Envelope struct {
 	VerificationResult      *string  `json:"verification_result"`
 	FailedCheckType         *string  `json:"failed_check_type"`
 	FailureReason           *string  `json:"failure_reason"`
+
+	// Verification receipt fields (RV — manual verifier sub-type only)
+	// Present when rv_type is absent (sde_verification_receipts issuer).
+	VerifiedReceiptCount *int64  `json:"verified_receipt_count"`
+	ValidCount           *int64  `json:"valid_count"`
+	InvalidCount         *int64  `json:"invalid_count"`
+	VerifierClient       *string `json:"verifier_client"`
+	VerifierIdentityHash *string `json:"verifier_identity_hash"`
+	// PreviousHash is the chain link for RV-manual receipts.
+	// For RG / RE the same concept uses PriorHash (already declared above).
+	PreviousHash *string `json:"previous_hash"`
+
+	// Engagement receipt fields (RE only)
+	ExpiresAt      *string  `json:"expires_at"`
+	RecipientHash  *string  `json:"recipient_hash"`
+	ReceiptsInScope *int64  `json:"receipts_in_scope"`
+	ScopeHash      *string  `json:"scope_hash"`
+	Permissions    []string `json:"permissions"`
+	RevokedAt      *string  `json:"revoked_at"`
 
 	// Governance fields (RG) — org-scoped, no vault_id
 	ChangeType          *string `json:"change_type"`

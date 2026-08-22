@@ -1,0 +1,38 @@
+{
+  "_comment": "AUTHORITATIVE protocol test vector for the RE (engagement receipt) canonical form. Issued by sde_engagement_receipts via engagement-receipt-issuer.ts (canonicaliseEngagementReceipt in packages/api/src/utils/canonical-receipt.ts). The Go CLI (reCanonical in internal/dsr/canonical.go) must produce byte-identical output for this input.",
+  "_spec": "canonicaliseEngagementReceipt / reCanonical — v1-legacy: sort all keys by Unicode code-point order, JSON.stringify compact. permissions array is sorted at issuance.",
+  "input": {
+    "actor": "user:550e8400-e29b-41d4-a716-000000000002",
+    "engagementId": "ENG-01HWTEST0002",
+    "expiresAt": "2027-08-22T10:00:00.000Z",
+    "issuedAt": "2026-08-22T10:00:00.000Z",
+    "permissions": ["read", "verify"],
+    "priorHash": null,
+    "receiptId": "RE-550e8400-e29b-41d4-a716-446655440002",
+    "receiptsInScope": 100,
+    "recipientHash": "sha256:abcdef1234567890",
+    "revokedAt": null,
+    "scopeHash": "sha256:1234567890abcdef",
+    "type": "RE",
+    "vaultId": "550e8400-e29b-41d4-a716-446655440001",
+    "version": "DSR/1.0"
+  },
+  "wire_names": {
+    "actor": "user:550e8400-e29b-41d4-a716-000000000002",
+    "engagement_id": "ENG-01HWTEST0002",
+    "expires_at": "2027-08-22T10:00:00.000Z",
+    "issued_at": "2026-08-22T10:00:00.000Z",
+    "permissions": ["read", "verify"],
+    "prior_hash": null,
+    "receipt_id": "RE-550e8400-e29b-41d4-a716-446655440002",
+    "receipts_in_scope": 100,
+    "recipient_hash": "sha256:abcdef1234567890",
+    "revoked_at": null,
+    "scope_hash": "sha256:1234567890abcdef",
+    "type": "RE",
+    "vault_id": "550e8400-e29b-41d4-a716-446655440001",
+    "version": "DSR/1.0"
+  },
+  "canonical_json": "{\"actor\":\"user:550e8400-e29b-41d4-a716-000000000002\",\"engagement_id\":\"ENG-01HWTEST0002\",\"expires_at\":\"2027-08-22T10:00:00.000Z\",\"issued_at\":\"2026-08-22T10:00:00.000Z\",\"permissions\":[\"read\",\"verify\"],\"prior_hash\":null,\"receipt_id\":\"RE-550e8400-e29b-41d4-a716-446655440002\",\"receipts_in_scope\":100,\"recipient_hash\":\"sha256:abcdef1234567890\",\"revoked_at\":null,\"scope_hash\":\"sha256:1234567890abcdef\",\"type\":\"RE\",\"vault_id\":\"550e8400-e29b-41d4-a716-446655440001\",\"version\":\"DSR/1.0\"}",
+  "canonical_sha256": "4b1dcdecdeae64d4ed2fafeb7dff2d431c341b5d4edc6cb72d3347361052759f"
+}
