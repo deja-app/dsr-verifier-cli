@@ -103,19 +103,23 @@ jobs:
           cache: true
           cache-dependency-path: dsr-verifier-cli/go.sum
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '9.1.0'
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: wallow/package-lock.json
+          cache: pnpm
+          cache-dependency-path: wallow/pnpm-lock.yaml
 
       - name: Install wallow dependencies
-        run: npm ci --prefix wallow
+        run: cd wallow && pnpm install --frozen-lockfile
 
       - name: Generate parity vectors (TypeScript issuer)
         run: |
           cd wallow/packages/api
-          npx tsx scripts/generate-parity-vectors.ts \
+          pnpm exec tsx scripts/generate-parity-vectors.ts \
             --out-dir ${{ github.workspace }}/parity-fresh
 
       - name: Check parity drift (committed vectors must be up-to-date)
