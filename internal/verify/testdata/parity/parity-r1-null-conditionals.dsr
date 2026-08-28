@@ -7,7 +7,7 @@
   "issued_at": "2026-08-18T12:00:00.000Z",
   "actor": "github:12345678",
   "origin": "github",
-  "signature": "xXx04og5njsTd+Q9+KYAKwfImomc5I/es73i9vUOWwc64d/4DtIMVT0g7xEva6R7XTwVSmBd0P42ThZULh+BAg==",
+  "signature": "BE2i7s9s2kFMq4eL29Lcw69ZDOD6eAYArJZZpEHs5jiKn6ML9nysPt0GM47LJlDDs8NEnszxq3S6PBJQeN1IBQ==",
   "signature_algorithm": "ed25519-v1",
   "canonical_form_version": "v3-jcs",
   "signing_key_id": "parity-test-key-v1",

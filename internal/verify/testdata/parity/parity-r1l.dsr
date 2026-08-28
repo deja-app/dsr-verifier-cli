@@ -7,7 +7,7 @@
   "issued_at": "2026-08-18T12:00:00.000Z",
   "actor": "github:12345678",
   "origin": "deja",
-  "signature": "2VQmAB788el9HbxxGF/kEbv1doaaPNAQhlsZ5mJz8tr9YspZnL9Ct3b7U8F/P3K7zbnm5vQhtvIWEuK3dAudDA==",
+  "signature": "u3VlOq/ovsK/YdJxmv7RUq/+uuIsAwShqTGoqbMWG4YkeiwEiL5IheJ4qqaMX9EfqHMGVdbD5tCe+IrNm8CIBw==",
   "signature_algorithm": "ed25519-v1",
   "signing_key_id": "parity-test-key-v1",
   "canonical_form_version": null,

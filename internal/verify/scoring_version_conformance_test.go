@@ -126,33 +126,35 @@ func signR1LSHA256(t *testing.T, e *dsr.Envelope) {
 // R1-N conformance — Ed25519
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestConformance_ScoringVersion_R1N_Pre109_VerifiesWithout(t *testing.T) {
-	// Pre-1.0.9 direction: scoring_version nil → canonical bytes omit the field →
-	// Ed25519 signature verifies. This is the shape of every R1-N receipt issued in
-	// production before 1.0.9 (all of them — scoring_version was never wired).
+func TestConformance_ScoringVersion_R1N_NilScoringVersion_NullInBytes(t *testing.T) {
+	// 2026-08-23 (migration 0265): scoring_version is now ALWAYS present in canonical
+	// bytes as null when ScoringVersion is nil. Sign and verify both call the same
+	// CanonicalPayload → the signature round-trips correctly even with nil.
+	// Pre-0265 production receipts signed without scoring_version are grandfathered
+	// as unverifiable under the new form; that is the accepted outcome.
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("ed25519.GenerateKey: %v", err)
 	}
 
 	e := baseR1N()
-	// ScoringVersion intentionally absent (nil) — pre-1.0.9 shape
+	// ScoringVersion nil — produces scoring_version:null in canonical bytes
 	signR1NEd25519(t, e, priv)
 
-	// Verify canonical bytes do NOT contain scoring_version
+	// Verify canonical bytes DO contain scoring_version:null
 	canonical, cerr := dsr.CanonicalPayload(e)
 	if cerr != nil {
 		t.Fatalf("CanonicalPayload: %v", cerr)
 	}
-	if strings.Contains(canonical, "scoring_version") {
-		t.Errorf("pre-1.0.9 R1-N canonical must NOT contain scoring_version; got: %s", canonical)
+	if !strings.Contains(canonical, `"scoring_version":null`) {
+		t.Errorf("R1-N canonical must contain scoring_version:null when ScoringVersion is nil; got: %s", canonical)
 	}
 
-	// Verify signature round-trips correctly
-	provided := &verify.PublicKeyWithID{Key: pub, KeyID: "test-key-pre109-r1n"}
+	// Verify signature round-trips correctly (sign + verify use same canonical form)
+	provided := &verify.PublicKeyWithID{Key: pub, KeyID: "test-key-nil-sv-r1n"}
 	res := verify.Signature(e, provided)
 	if !res.Valid {
-		t.Errorf("pre-1.0.9 R1-N (nil scoring_version) must verify: %v", res.Err)
+		t.Errorf("R1-N (nil scoring_version → scoring_version:null) must verify: %v", res.Err)
 	}
 }
 
@@ -218,27 +220,29 @@ func TestConformance_ScoringVersion_R1N_Tamper_FieldAddedAfterSigning(t *testing
 // R1-L conformance — SHA-256 legacy
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestConformance_ScoringVersion_R1L_Pre109_VerifiesWithout(t *testing.T) {
-	// Pre-1.0.9 direction: scoring_version nil → SHA-256 over canonical bytes
-	// (without the field) must match stored signature. Backward compat for all
-	// existing R1-L receipts in production (all of them — field never wired).
+func TestConformance_ScoringVersion_R1L_NilScoringVersion_NullInBytes(t *testing.T) {
+	// 2026-08-23 (migration 0270): scoring_version is now ALWAYS present in canonical
+	// bytes as null when ScoringVersion is nil. SHA-256 sign and verify both call the
+	// same CanonicalPayload → the signature round-trips correctly even with nil.
+	// Pre-0270 production receipts signed without scoring_version are grandfathered
+	// as unverifiable under the new form; that is the accepted outcome.
 	e := baseR1L()
-	// ScoringVersion intentionally absent (nil)
+	// ScoringVersion nil — produces scoring_version:null in canonical bytes
 	signR1LSHA256(t, e)
 
-	// Verify canonical bytes do NOT contain scoring_version
+	// Verify canonical bytes DO contain scoring_version:null
 	canonical, cerr := dsr.CanonicalPayload(e)
 	if cerr != nil {
 		t.Fatalf("CanonicalPayload: %v", cerr)
 	}
-	if strings.Contains(canonical, "scoring_version") {
-		t.Errorf("pre-1.0.9 R1-L canonical must NOT contain scoring_version; got: %s", canonical)
+	if !strings.Contains(canonical, `"scoring_version":null`) {
+		t.Errorf("R1-L canonical must contain scoring_version:null when ScoringVersion is nil; got: %s", canonical)
 	}
 
-	// Verify SHA-256 round-trips correctly (no public key for sha256-legacy)
+	// Verify SHA-256 round-trips correctly (sign + verify use same canonical form)
 	res := verify.Signature(e, nil)
 	if !res.Valid {
-		t.Errorf("pre-1.0.9 R1-L (nil scoring_version) must verify: %v", res.Err)
+		t.Errorf("R1-L (nil scoring_version → scoring_version:null) must verify: %v", res.Err)
 	}
 	if res.Algorithm != dsr.AlgoSHA256Legacy {
 		t.Errorf("R1-L must use sha256-legacy; got: %s", res.Algorithm)

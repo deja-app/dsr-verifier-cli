@@ -7,7 +7,7 @@
   "issued_at": "2026-08-18T12:00:00.000Z",
   "actor": "system",
   "origin": "deja",
-  "signature": "Uo+U7n2XLpQ2e6ljstCxWMC61q2JFDWSrqiaxJ8VTFbmwYeZgenJYR7kLQkBsluXjXXhO2qKLEXVPdixNf2oBQ==",
+  "signature": "DeBbRJ1z8KlF6gihxksGd62ZqY7ReMvdaj2qyrsRN/5NwEAnq4CXrdhkFV1aX7RKGgebbSWy4daDDyutnjXXBg==",
   "signature_algorithm": "ed25519-v1",
   "signing_key_id": "parity-test-key-v1",
   "canonical_form_version": null,

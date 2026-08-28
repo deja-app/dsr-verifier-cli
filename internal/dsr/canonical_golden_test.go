@@ -299,16 +299,17 @@ func TestGolden_R1_Minimal_CanonicalBytes(t *testing.T) {
 	}
 
 	// Field order: ccs_score, confidence, error_class, issued_at, matched,
-	//              missing_field, pr_number, repository, service_zone
+	//              missing_field, pr_number, repository, scoring_version, service_zone
+	// scoring_version:null — always present from 2026-08-23 (migration 0265).
 	want := `{"ccs_score":"0.8750","confidence":"HIGH","error_class":null,` +
 		`"issued_at":"2026-01-01T00:00:00.000Z","matched":"true","missing_field":null,` +
-		`"pr_number":42,"repository":"acme-corp/payments","service_zone":"zone-prod-1"}`
+		`"pr_number":42,"repository":"acme-corp/payments","scoring_version":null,"service_zone":"zone-prod-1"}`
 
 	if canonical != want {
 		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
 	}
-	if len(canonical) != 216 {
-		t.Errorf("canonical length = %d, want 216", len(canonical))
+	if len(canonical) != 239 {
+		t.Errorf("canonical length = %d, want 239", len(canonical))
 	}
 }
 
@@ -334,7 +335,7 @@ func TestGolden_R1_Minimal_SHA256(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CanonicalPayload: %v", err)
 	}
-	const wantHash = "f72a3f61ed47bb86bfcb042456974dbef72b7a4a5d5f5173d386e364e66c2339"
+	const wantHash = "a68ef5761d653369e80440ac472813078eb61d56a6faabe728f36b7f7cc7cda8"
 	if got := sha256Hex(canonical); got != wantHash {
 		t.Errorf("SHA-256\n got: %s\nwant: %s", got, wantHash)
 	}
@@ -377,19 +378,20 @@ func TestGolden_R1_Full_CanonicalBytes(t *testing.T) {
 
 	// Field order (alphabetical): anchoring_basis, ccs_score, confidence,
 	//   error_class, is_internal_validation, issued_at, matched, missing_field,
+	// scoring_version:null — always present from 2026-08-23 (migration 0265).
 	//   pr_number, producer_graph_score, repository, schema_stability_score,
 	//   service_zone, temporal_basis
 	want := `{"anchoring_basis":"deploy","ccs_score":"0.8750","confidence":"HIGH",` +
 		`"error_class":null,"is_internal_validation":false,` +
 		`"issued_at":"2026-01-01T00:00:00.000Z","matched":"true","missing_field":null,` +
 		`"pr_number":42,"producer_graph_score":"0.7200","repository":"acme-corp/payments",` +
-		`"schema_stability_score":"0.6500","service_zone":"zone-prod-1","temporal_basis":"deployed"}`
+		`"schema_stability_score":"0.6500","scoring_version":null,"service_zone":"zone-prod-1","temporal_basis":"deployed"}`
 
 	if canonical != want {
 		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
 	}
-	if len(canonical) != 368 {
-		t.Errorf("canonical length = %d, want 368", len(canonical))
+	if len(canonical) != 391 {
+		t.Errorf("canonical length = %d, want 391", len(canonical))
 	}
 }
 
@@ -421,7 +423,7 @@ func TestGolden_R1_Full_SHA256(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CanonicalPayload: %v", err)
 	}
-	const wantHash = "ed48c01ccaf2c80b712487db3f067e6f7aab78b5b044e49978b5eef4e056050d"
+	const wantHash = "82bb58d6610221ff03c58404c53418f9c575b865c80ec3426e4c17b0e535803d"
 	if got := sha256Hex(canonical); got != wantHash {
 		t.Errorf("SHA-256\n got: %s\nwant: %s", got, wantHash)
 	}
@@ -512,15 +514,16 @@ func TestGolden_R1N_DSR103_WithID_CanonicalBytes(t *testing.T) {
 	}
 
 	// Field order: highest_candidate_ccs, incident_id, issued_at, lookback_days,
-	//              prs_evaluated, receipt_id, service_zone, type, vault_id, version
+	//              prs_evaluated, receipt_id, scoring_version, service_zone, type, vault_id, version
+	// scoring_version:null — always present from 2026-08-23 (migration 0265).
 	want := `{"highest_candidate_ccs":"0.000","incident_id":"sentry:V1-BASELINE",` +
 		`"issued_at":"2026-07-16T00:00:00.000Z","lookback_days":30,"prs_evaluated":0,` +
-		`"receipt_id":"R1N-V1-BASELINE","service_zone":"deja-test-zone",` +
+		`"receipt_id":"R1N-V1-BASELINE","scoring_version":null,"service_zone":"deja-test-zone",` +
 		`"type":"R1-N","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0.3"}`
 	if canonical != want {
 		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
 	}
-	const wantHash = "1a8c85a06d540df245e663036d1a8c2d9e9427cdfe9a76efa9ab69c7d9019b62"
+	const wantHash = "2048d8ab4fcb5ce9c3829bc5701221434b93eb268a27c08f311b65b1c44651b8"
 	if got := sha256Hex(canonical); got != wantHash {
 		t.Errorf("SHA-256\n got: %s\nwant: %s", got, wantHash)
 	}
@@ -542,15 +545,16 @@ func TestGolden_R1N_DSR103_Synthetic_CanonicalBytes(t *testing.T) {
 	}
 
 	// Field order: highest_candidate_ccs, incident_id, is_synthetic, issued_at,
-	//              lookback_days, prs_evaluated, receipt_id, service_zone, type, vault_id, version
+	//              lookback_days, prs_evaluated, receipt_id, scoring_version, service_zone, type, vault_id, version
+	// scoring_version:null — always present from 2026-08-23 (migration 0265).
 	want := `{"highest_candidate_ccs":"0.000","incident_id":"sentry:V1-0-2",` +
 		`"is_synthetic":true,"issued_at":"2026-07-16T00:00:00.000Z","lookback_days":30,` +
-		`"prs_evaluated":0,"receipt_id":"R1N-V1-0-2","service_zone":"deja-test-zone",` +
+		`"prs_evaluated":0,"receipt_id":"R1N-V1-0-2","scoring_version":null,"service_zone":"deja-test-zone",` +
 		`"type":"R1-N","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0.3"}`
 	if canonical != want {
 		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
 	}
-	const wantHash = "5e978f5f579e4dcb856e07e345b377d747b904a063326c185b10447b302bdc0b"
+	const wantHash = "38630b852311ba1363658aef1e9712fd5586f7c715d2ed9f31d52668c2e205c6"
 	if got := sha256Hex(canonical); got != wantHash {
 		t.Errorf("SHA-256\n got: %s\nwant: %s", got, wantHash)
 	}
@@ -570,16 +574,17 @@ func TestGolden_R1N_DSR103_CanonicalBytes(t *testing.T) {
 	}
 
 	// Field order: highest_candidate_ccs, issued_at, lookback_days, prs_evaluated,
-	//              receipt_id, service_zone, type, vault_id, version
+	//              receipt_id, scoring_version, service_zone, type, vault_id, version
 	// Note: incident_id is absent (null → omitted, not included as JSON null).
+	// scoring_version:null — always present from 2026-08-23 (migration 0265).
 	want := `{"highest_candidate_ccs":"0.000","issued_at":"2026-07-16T00:00:00.000Z",` +
 		`"lookback_days":30,"prs_evaluated":0,"receipt_id":"R1N-V1-0-3",` +
-		`"service_zone":"deja-test-zone","type":"R1-N",` +
+		`"scoring_version":null,"service_zone":"deja-test-zone","type":"R1-N",` +
 		`"vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0.3"}`
 	if canonical != want {
 		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
 	}
-	const wantHash = "fe7e9eab4d351aa4f03ff8138b7a25798ec722d54219229e17b52cd9471c1498"
+	const wantHash = "6818b826f3de40244dfb9787d01264363457180560789125cd4fa0eff19b66e5"
 	if got := sha256Hex(canonical); got != wantHash {
 		t.Errorf("SHA-256\n got: %s\nwant: %s", got, wantHash)
 	}
@@ -646,7 +651,8 @@ func TestGolden_R1L_Baseline_CanonicalBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CanonicalPayload: %v", err)
 	}
-	const want = `{"candidate_count":3,"highest_ccs":"0.720","issued_at":"2026-07-17T00:00:00.000Z","receipt_id":"R1L-GOLDEN-BASELINE","service_zone":"deja-test-zone","type":"R1-L","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0"}`
+	// scoring_version:null — always present from 2026-08-23 (migration 0270).
+	const want = `{"candidate_count":3,"highest_ccs":"0.720","issued_at":"2026-07-17T00:00:00.000Z","receipt_id":"R1L-GOLDEN-BASELINE","scoring_version":null,"service_zone":"deja-test-zone","type":"R1-L","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0"}`
 	if canonical != want {
 		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
 	}
@@ -656,8 +662,8 @@ func TestGolden_R1L_Baseline_CanonicalBytes(t *testing.T) {
 	if strings.Contains(canonical, "repository") || strings.Contains(canonical, "pr_number") {
 		t.Errorf("R1-L canonical must not contain R1 attribution fields; got: %s", canonical)
 	}
-	// SHA-256 pin — cross-checks against the TypeScript issuer's SHA-256-hex signature.
-	const wantHash = "f3b67e37d861b4159111548ad176a98559561030fd2b4838bbb674d4c1b1562b"
+	// SHA-256 pin — updated 2026-08-23: scoring_version:null now in canonical bytes.
+	const wantHash = "eac28d6983cd658c693d97b177ea4be4bb4ea7ffd8db415611ba4e16744ce659"
 	if got := sha256Hex(canonical); got != wantHash {
 		t.Errorf("R1-L baseline SHA-256\n got: %s\nwant: %s", got, wantHash)
 	}
@@ -673,12 +679,13 @@ func TestGolden_R1L_WithIncidentID_CanonicalBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CanonicalPayload: %v", err)
 	}
-	const want = `{"candidate_count":3,"highest_ccs":"0.720","incident_id":"sentry:V1-BASELINE","issued_at":"2026-07-17T00:00:00.000Z","receipt_id":"R1L-GOLDEN-WITH-ID","service_zone":"deja-test-zone","type":"R1-L","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0"}`
+	// scoring_version:null — always present from 2026-08-23 (migration 0270).
+	const want = `{"candidate_count":3,"highest_ccs":"0.720","incident_id":"sentry:V1-BASELINE","issued_at":"2026-07-17T00:00:00.000Z","receipt_id":"R1L-GOLDEN-WITH-ID","scoring_version":null,"service_zone":"deja-test-zone","type":"R1-L","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0"}`
 	if canonical != want {
 		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
 	}
-	// SHA-256 pin — cross-checks against the TypeScript issuer's SHA-256-hex signature.
-	const wantHash = "8db1f1da35433690862b9f213b0171d4944463dc72df42905c116a0c4149ca8a"
+	// SHA-256 pin — updated 2026-08-23: scoring_version:null now in canonical bytes.
+	const wantHash = "49e3acb2096163d37860d8352e06f61362eb920d48181dc96666d717aa28e3ac"
 	if got := sha256Hex(canonical); got != wantHash {
 		t.Errorf("R1-L with-incident-id SHA-256\n got: %s\nwant: %s", got, wantHash)
 	}
@@ -697,12 +704,13 @@ func TestGolden_R1L_Synthetic_CanonicalBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CanonicalPayload: %v", err)
 	}
-	const want = `{"candidate_count":3,"highest_ccs":"0.720","incident_id":"sentry:V1-BASELINE","is_synthetic":true,"issued_at":"2026-07-17T00:00:00.000Z","receipt_id":"R1L-GOLDEN-SYNTHETIC","service_zone":"deja-test-zone","type":"R1-L","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0.1"}`
+	// scoring_version:null — always present from 2026-08-23 (migration 0270).
+	const want = `{"candidate_count":3,"highest_ccs":"0.720","incident_id":"sentry:V1-BASELINE","is_synthetic":true,"issued_at":"2026-07-17T00:00:00.000Z","receipt_id":"R1L-GOLDEN-SYNTHETIC","scoring_version":null,"service_zone":"deja-test-zone","type":"R1-L","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0.1"}`
 	if canonical != want {
 		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
 	}
-	// SHA-256 pin — cross-checks against the TypeScript issuer's SHA-256-hex signature.
-	const wantHash = "f100eda088139814b8d2b81b5c70c09365aa989916cadef17c88437d611e1e0b"
+	// SHA-256 pin — updated 2026-08-23: scoring_version:null now in canonical bytes.
+	const wantHash = "3a6fb7a54e604801f26b65d24197ae83748859c2e24b2f589b3ff343b655bde0"
 	if got := sha256Hex(canonical); got != wantHash {
 		t.Errorf("R1-L synthetic SHA-256\n got: %s\nwant: %s", got, wantHash)
 	}
@@ -722,14 +730,16 @@ func TestGolden_R1L_WithActor_DSR102_CanonicalBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CanonicalPayload: %v", err)
 	}
-	const want = `{"actor":"86881100","candidate_count":3,"highest_ccs":"0.720","incident_id":"sentry:V1-BASELINE","issued_at":"2026-07-17T00:00:00.000Z","receipt_id":"R1L-GOLDEN-ACTOR","service_zone":"deja-test-zone","type":"R1-L","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0.2"}`
+	// scoring_version:null — always present from 2026-08-23 (migration 0270).
+	const want = `{"actor":"86881100","candidate_count":3,"highest_ccs":"0.720","incident_id":"sentry:V1-BASELINE","issued_at":"2026-07-17T00:00:00.000Z","receipt_id":"R1L-GOLDEN-ACTOR","scoring_version":null,"service_zone":"deja-test-zone","type":"R1-L","vault_id":"00000000-0000-0000-0000-000000000001","version":"DSR/1.0.2"}`
 	if canonical != want {
 		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
 	}
 	if !strings.Contains(canonical, `"actor":"86881100"`) {
 		t.Errorf("DSR/1.0.2 canonical must include actor field; got: %s", canonical)
 	}
-	const wantHash = "f06a9b0275925f3a7e9ff7f5f62389879fe425ad33f6795f57665483e295394a"
+	// SHA-256 pin — updated 2026-08-23: scoring_version:null now in canonical bytes.
+	const wantHash = "67d0c3e260729621f5cc5be79dbeb00f8f4baff787715ec9b1e1d943f4324e14"
 	if got := sha256Hex(canonical); got != wantHash {
 		t.Errorf("R1-L DSR/1.0.2 actor SHA-256\n got: %s\nwant: %s", got, wantHash)
 	}
@@ -814,10 +824,11 @@ func TestGolden_R1_DSR104_CanonicalBytes(t *testing.T) {
 		t.Fatalf("CanonicalPayload: %v", err)
 	}
 
+	// scoring_version:null — always present from 2026-08-23 (migration 0265).
 	want := `{"actor":"github:86881100","ccs_score":"0.8750","confidence":"HIGH",` +
 		`"error_class":null,"incident_id":"INC-00000000-0000-0000-0000-000000000001",` +
 		`"issued_at":"2026-01-01T00:00:00.000Z","matched":"true","missing_field":null,` +
-		`"pr_number":42,"repository":"acme-corp/payments","service_zone":"zone-prod-1",` +
+		`"pr_number":42,"repository":"acme-corp/payments","scoring_version":null,"service_zone":"zone-prod-1",` +
 		`"signal_observation_hash":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"}`
 
 	if canonical != want {
@@ -867,10 +878,11 @@ func TestGolden_R1_Pre104_ActorAndIncidentIDIncludedWhenNonNull(t *testing.T) {
 		}
 	}
 	// Canonical bytes are identical to the DSR/1.0.4 vector (version not in R1 canonical).
+	// scoring_version:null — always present from 2026-08-23 (migration 0265).
 	want := `{"actor":"github:86881100","ccs_score":"0.8750","confidence":"HIGH",` +
 		`"error_class":null,"incident_id":"INC-00000000-0000-0000-0000-000000000001",` +
 		`"issued_at":"2026-01-01T00:00:00.000Z","matched":"true","missing_field":null,` +
-		`"pr_number":42,"repository":"acme-corp/payments","service_zone":"zone-prod-1",` +
+		`"pr_number":42,"repository":"acme-corp/payments","scoring_version":null,"service_zone":"zone-prod-1",` +
 		`"signal_observation_hash":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"}`
 	if canonical != want {
 		t.Errorf("canonical mismatch\n got: %s\nwant: %s", canonical, want)
@@ -905,10 +917,11 @@ func TestGolden_R1L_DSR104_CanonicalBytes(t *testing.T) {
 		t.Fatalf("CanonicalPayload: %v", err)
 	}
 
+	// scoring_version:null — always present from 2026-08-23 (migration 0270).
 	want := `{"actor":"github:86881100","candidate_count":3,"highest_ccs":"0.720",` +
 		`"incident_id":"INC-00000000-0000-0000-0000-000000000001",` +
 		`"issued_at":"2026-01-01T00:00:00.000Z","receipt_id":"R1L-104-golden",` +
-		`"service_zone":"zone-prod-1",` +
+		`"scoring_version":null,"service_zone":"zone-prod-1",` +
 		`"signal_observation_hash":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",` +
 		`"type":"R1-L","vault_id":"vlt-test","version":"DSR/1.0.4"}`
 
@@ -963,9 +976,10 @@ func TestGolden_R1N_DSR104_CanonicalBytes(t *testing.T) {
 		t.Fatalf("CanonicalPayload: %v", err)
 	}
 
+	// scoring_version:null — always present from 2026-08-23 (migration 0265).
 	want := `{"highest_candidate_ccs":"0.000","incident_id":"INC-00000000-0000-0000-0000-000000000001",` +
 		`"issued_at":"2026-01-01T00:00:00.000Z","lookback_days":30,"prs_evaluated":0,` +
-		`"receipt_id":"R1N-104-golden","service_zone":"zone-prod-1",` +
+		`"receipt_id":"R1N-104-golden","scoring_version":null,"service_zone":"zone-prod-1",` +
 		`"signal_observation_hash":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",` +
 		`"type":"R1-N","vault_id":"vlt-test","version":"DSR/1.0.4"}`
 
@@ -1123,9 +1137,10 @@ func TestGolden_R1L_DSR105_CanonicalBytes(t *testing.T) {
 		t.Fatalf("CanonicalPayload: %v", err)
 	}
 
+	// scoring_version:null — always present from 2026-08-23 (migration 0270).
 	want := `{"actor":"github:12345678","attribution_margin":"0.0004","candidate_count":2,` +
 		`"highest_ccs":"0.693","issued_at":"2026-01-01T00:00:00.000Z",` +
-		`"receipt_id":"R1L-256-golden","service_zone":"checkout-service",` +
+		`"receipt_id":"R1L-256-golden","scoring_version":null,"service_zone":"checkout-service",` +
 		`"type":"R1-L","vault_id":"vlt-test","version":"DSR/1.0.5"}`
 
 	if canonical != want {
@@ -1269,10 +1284,11 @@ func TestGolden_R1N_WithScoringVersion_CanonicalBytes(t *testing.T) {
 	}
 }
 
-func TestGolden_R1N_NilScoringVersion_Omitted(t *testing.T) {
-	// Pre-1.0.9 R1-N: scoring_version absent from envelope → must be OMITTED from
-	// canonical bytes. If "scoring_version" appears (e.g. as null), existing
-	// signatures would break — every pre-1.0.9 production receipt would fail to verify.
+func TestGolden_R1N_NilScoringVersion_NullInBytes(t *testing.T) {
+	// 2026-08-23 (migration 0265): scoring_version is now ALWAYS present in
+	// canonical bytes — even when nil in the envelope. anyNullableStr(nil) → null.
+	// Pre-0265 receipts where scoring_version was absent at signing time are
+	// grandfathered as unverifiable under the new form; that is the accepted outcome.
 	hash := testSignalObsHash
 	incID := testIncidentID
 	lookback := int64(30)
@@ -1293,22 +1309,20 @@ func TestGolden_R1N_NilScoringVersion_Omitted(t *testing.T) {
 		ServiceZone:           strPtr("zone-prod-1"),
 		IncidentID:            &incID,
 		SignalObservationHash: &hash,
-		// ScoringVersion intentionally absent (nil) — pre-1.0.9 receipt shape
+		// ScoringVersion nil — now produces scoring_version:null in canonical bytes
 	}
 
 	canonical, err := dsr.CanonicalPayload(e)
 	if err != nil {
 		t.Fatalf("CanonicalPayload: %v", err)
 	}
-	// This envelope is identical to TestGolden_R1N_DSR104_CanonicalBytes above.
-	// Confirming the SHA-256 pin here guarantees backward compatibility: the 1.0.9
-	// change must not alter canonical bytes for receipts where scoring_version is nil.
-	const wantHash = "da13ae1d7fd950226464259e393d4c93472b20451fa92593e661688ff39de318"
+	// SHA-256 pin updated 2026-08-23: scoring_version:null is now in canonical bytes.
+	const wantHash = "94ec975f6815016e9b1a5686313afd3ee47e4fb3eaec5d2e0a7737a48053644d"
 	if got := sha256Hex(canonical); got != wantHash {
-		t.Errorf("R1-N nil-scoring_version SHA-256 changed — backward compat broken\n got: %s\nwant: %s", got, wantHash)
+		t.Errorf("R1-N nil-scoring_version SHA-256 mismatch\n got: %s\nwant: %s", got, wantHash)
 	}
-	if strings.Contains(canonical, "scoring_version") {
-		t.Errorf("pre-1.0.9 R1-N canonical must NOT contain scoring_version; got: %s", canonical)
+	if !strings.Contains(canonical, `"scoring_version":null`) {
+		t.Errorf("R1-N canonical must contain scoring_version:null when ScoringVersion is nil; got: %s", canonical)
 	}
 }
 
@@ -1364,12 +1378,11 @@ func TestGolden_R1L_WithScoringVersion_CanonicalBytes(t *testing.T) {
 	}
 }
 
-func TestGolden_R1L_NilScoringVersion_Omitted(t *testing.T) {
-	// Pre-1.0.9 R1-L: scoring_version absent from envelope → must be OMITTED.
-	// This envelope is identical to TestGolden_R1L_DSR104_CanonicalBytes above
-	// (same receipt ID, same field values, no ScoringVersion). Pinning the SHA-256
-	// here is the backward-compat guarantee: the 1.0.9 change must produce identical
-	// canonical bytes for any R1-L where scoring_version is nil.
+func TestGolden_R1L_NilScoringVersion_NullInBytes(t *testing.T) {
+	// 2026-08-23 (migration 0270): scoring_version is now ALWAYS present in
+	// canonical bytes — even when nil in the envelope. anyNullableStr(nil) → null.
+	// Pre-0270 receipts where scoring_version was absent at signing time are
+	// grandfathered as unverifiable under the new form; that is the accepted outcome.
 	hash := testSignalObsHash
 	incID := testIncidentID
 	e := &dsr.Envelope{
@@ -1387,19 +1400,20 @@ func TestGolden_R1L_NilScoringVersion_Omitted(t *testing.T) {
 		ServiceZone:           strPtr("zone-prod-1"),
 		IncidentID:            &incID,
 		SignalObservationHash: &hash,
-		// ScoringVersion intentionally absent (nil) — pre-1.0.9 receipt shape
+		// ScoringVersion nil — now produces scoring_version:null in canonical bytes
 	}
 
 	canonical, err := dsr.CanonicalPayload(e)
 	if err != nil {
 		t.Fatalf("CanonicalPayload: %v", err)
 	}
-	const wantHash = "3111812c4dc29f3a62ad07dc75696dfc080574d92090c269578f2aa6c4ff52d5"
+	// SHA-256 pin updated 2026-08-23: scoring_version:null is now in canonical bytes.
+	const wantHash = "f9091750dbf670d1cbcc0b0c943fedee5300bc7b0dc431627e3d6d608bf8c5b7"
 	if got := sha256Hex(canonical); got != wantHash {
-		t.Errorf("R1-L nil-scoring_version SHA-256 changed — backward compat broken\n got: %s\nwant: %s", got, wantHash)
+		t.Errorf("R1-L nil-scoring_version SHA-256 mismatch\n got: %s\nwant: %s", got, wantHash)
 	}
-	if strings.Contains(canonical, "scoring_version") {
-		t.Errorf("pre-1.0.9 R1-L canonical must NOT contain scoring_version; got: %s", canonical)
+	if !strings.Contains(canonical, `"scoring_version":null`) {
+		t.Errorf("R1-L canonical must contain scoring_version:null when ScoringVersion is nil; got: %s", canonical)
 	}
 }
 
@@ -1708,9 +1722,10 @@ func TestGolden_R1_V4JCS_CanonicalBytes(t *testing.T) {
 	// Pin the exact canonical bytes so any future drift is caught immediately.
 	// This vector was generated from the Go implementation and cross-checked
 	// against canonicaliseReceiptJCSv4() in the TypeScript issuer.
+	// scoring_version:null — always present from 2026-08-23 (migration 0265).
 	wantCanonical := `{"actor":"github:12345","ccs_score":"0.5000","confidence":"STANDARD_DEDUCTION",` +
 		`"error_class":null,"issued_at":"2026-01-01T12:00:00.000Z","matched":"true",` +
-		`"missing_field":null,"pr_number":1,"repository":"acme/api","service_zone":"api",` +
+		`"missing_field":null,"pr_number":1,"repository":"acme/api","scoring_version":null,"service_zone":"api",` +
 		`"signing_algorithm":"ed25519-v1","signing_key_id":"deja-managed-v1",` +
 		`"temporal_basis":"merged_fallback","version":"DSR/1.0.6"}`
 	if canonical != wantCanonical {

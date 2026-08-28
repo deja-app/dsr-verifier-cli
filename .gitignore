@@ -1,0 +1,12 @@
+# Local build outputs — never commit binaries, use `make build` or GitHub Releases
+dsr-verifier-cli
+dsr-verifier-cli.exe
+dsr-verify
+dsr-verify.exe
+dist/
+
+# Verifier audit log produced by `dsr-verify verify*`
+verifier.log
+
+# macOS
+.DS_Store
