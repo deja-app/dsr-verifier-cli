@@ -91,7 +91,7 @@ jobs:
       - name: Check out wallow
         uses: actions/checkout@v4
         with:
-          repository: deja-app/wallow
+          repository: BeWallow/wallow
           path: wallow
           # The wallow repo contains the TypeScript canonical form functions.
           # Use a deploy key or PAT if the repo is private.
