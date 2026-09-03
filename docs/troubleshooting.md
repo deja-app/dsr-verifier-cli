@@ -105,7 +105,7 @@ supported by the version of the CLI you are running.
 
 **What to do:**
 - Download the latest version of `dsr-verifier-cli` from
-  https://verify.deja.dev/download
+  https://github.com/deja-app/dsr-verifier-cli/releases
 - Older receipts will continue to work with newer versions of the CLI
   (backward compatibility is guaranteed).
 

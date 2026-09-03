@@ -25,7 +25,7 @@ func parseBundleVerifyArgs(args []string, stderr io.Writer) (bundlePath string, 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
-		case "--key", "-key":
+		case "--key", "-key", "--public-key", "-public-key":
 			i++
 			if i >= len(args) {
 				fmt.Fprintln(stderr, "error: --key requires a file path")
@@ -193,7 +193,7 @@ Arguments:
   <bundle.dsr.bundle>  path to the .dsr.bundle archive to verify
 
 Flags:
-  --key <file>    path to the PEM-encoded ed25519 public key (required)
+  --key / --public-key <file>    path to the PEM-encoded ed25519 public key (required)
   --json          machine-readable JSON output (also writes .verification.json)
   --quiet         minimal output; rely on exit code
   --no-log        disable the local audit log (./verifier.log by default)

@@ -30,9 +30,9 @@ brew install deja-app/tap/dsr-verifier-cli
 
 **Linux / Windows — direct download:**
 
-Go to https://verify.deja.dev/download and download the binary for your
-platform. Verify the SHA-256 checksum against the values listed on that page
-before running the binary.
+Go to https://github.com/deja-app/dsr-verifier-cli/releases and download the
+binary for your platform. Verify the SHA-256 checksum against the values
+listed in the release notes before running the binary.
 
 After installation, confirm it works:
 ```
