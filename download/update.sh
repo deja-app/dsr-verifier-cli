@@ -5,7 +5,8 @@
 #
 #   bash download/update.sh v1.0.1 dist/SHA256SUMS
 #
-# The resulting index.html is then deployed to verify.deja.dev/download.
+# The resulting index.html is published to the GitHub release at
+# https://github.com/deja-app/dsr-verifier-cli/releases
 
 set -euo pipefail
 

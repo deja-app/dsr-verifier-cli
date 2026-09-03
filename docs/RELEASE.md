@@ -144,7 +144,7 @@ Update it after each release:
 
 1. Replace the `VERSION` placeholder with the new tag
 2. Update the SHA-256 checksums from the `SHA256SUMS` file
-3. Deploy to `verify.deja.dev/download` (see infrastructure docs)
+3. Publish the GitHub release at https://github.com/deja-app/dsr-verifier-cli/releases
 
 Alternatively, this step can be automated as part of the release pipeline
 (open task: wire `download/index.html` to CI substitution).
