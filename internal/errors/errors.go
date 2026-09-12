@@ -54,6 +54,29 @@ const (
 	ContentHashMismatch ErrorClass = "content_hash_mismatch"
 )
 
+// AllClasses enumerates every ErrorClass this package defines.
+//
+// CONTRACT: adding an ErrorClass constant above REQUIRES adding it here.
+// TestAllClassesMatchesConstants reads this file and fails if the two diverge,
+// so the enumeration cannot silently fall behind the constants.
+//
+// It exists because consumers switch on the class to decide behaviour, and a
+// class nobody accounted for is dropped rather than flagged. The
+// cluster-analysis anomaly categoriser is the case that matters: a class it does
+// not recognise is excluded from statistical analysis, which is the safe
+// direction but only if someone noticed. AllClasses plus the coverage test in
+// internal/bundle is what makes "someone noticed" structural.
+var AllClasses = []ErrorClass{
+	SignatureInvalid,
+	KeyAuthorityMismatch,
+	HashChainBroken,
+	MalformedReceipt,
+	MalformedCausalRef,
+	KeyParseError,
+	UnsupportedAlgorithm,
+	ContentHashMismatch,
+}
+
 // VerificationError is a typed, auditor-friendly verification failure.
 type VerificationError struct {
 	// Class is the stable machine-readable error category.

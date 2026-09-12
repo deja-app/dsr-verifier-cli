@@ -12,6 +12,7 @@ import (
 
 	"github.com/deja-app/dsr-verifier-cli/internal/dsr"
 	dsrerrors "github.com/deja-app/dsr-verifier-cli/internal/errors"
+	"github.com/deja-app/dsr-verifier-cli/internal/verdict"
 	"github.com/deja-app/dsr-verifier-cli/internal/verify"
 )
 
@@ -28,11 +29,11 @@ type BundleVerifyResult struct {
 	Frameworks  []string
 	IssuerKeyID string
 
-	ManifestSig    ManifestSigResult
-	SequenceInteg  SeqIntegResult
-	PerReceipt     PerReceiptResult
-	CausalChain    CausalChainResult
-	RVCoverage     RVCoverageResult
+	ManifestSig     ManifestSigResult
+	SequenceInteg   SeqIntegResult
+	PerReceipt      PerReceiptResult
+	CausalChain     CausalChainResult
+	RVCoverage      RVCoverageResult
 	ClusterAnalysis ClusterAnalysisResult
 
 	DurationMS int64
@@ -77,9 +78,9 @@ func (r *BundleVerifyResult) Missing() int {
 
 // ManifestSigResult is returned by VerifyManifestSignature.
 type ManifestSigResult struct {
-	Valid   bool
-	KeyID   string
-	Err     *dsrerrors.VerificationError
+	Valid bool
+	KeyID string
+	Err   *dsrerrors.VerificationError
 }
 
 // SeqIntegResult is returned by VerifySequenceIntegrity.
@@ -114,6 +115,14 @@ type ReceiptFailure struct {
 	ReceiptID string
 	Type      string
 	Errors    []*dsrerrors.VerificationError
+
+	// State is the three-state verdict for this receipt.
+	//
+	// Consumers MUST read this rather than inspecting Errors[].Class. The class
+	// is frozen on the --json wire and in the audit log for this release, so
+	// deriving behaviour from it means inheriting a value that is deliberately
+	// stale. State carries the truth.
+	State verdict.State
 }
 
 // CausalChainResult is returned by VerifyCausalChain.
@@ -325,6 +334,9 @@ func VerifyPerReceipt(receipts []*ParsedReceipt, provided *verify.PublicKeyWithI
 				ReceiptID: pr.Entry.ReceiptID,
 				Type:      typ,
 				Errors:    []*dsrerrors.VerificationError{pr.ParseErr},
+				// A receipt this verifier could not parse is not a receipt it found
+				// fault with. No comparison was performed.
+				State: verdict.CannotVerify,
 			})
 			continue
 		}
@@ -343,11 +355,20 @@ func VerifyPerReceipt(receipts []*ParsedReceipt, provided *verify.PublicKeyWithI
 		if len(errs) > 0 {
 			res.ByType[typ].Failed++
 			res.Failed++
+			// Failed only when the signature comparison actually ran and disagreed.
+			// A key-authority mismatch means the auditor holds the wrong key, which
+			// is a limit of this verification attempt, not a finding about the
+			// receipt — so it is CannotVerify even though the signature may be fine.
+			state := verdict.CannotVerify
+			if sigRes.State == verdict.Failed {
+				state = verdict.Failed
+			}
 			res.Failures = append(res.Failures, ReceiptFailure{
 				Seq:       pr.Entry.Seq,
 				ReceiptID: pr.Receipt.ReceiptID,
 				Type:      typ,
 				Errors:    errs,
+				State:     state,
 			})
 		} else {
 			res.ByType[typ].Passed++

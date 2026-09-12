@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/deja-app/dsr-verifier-cli/internal/dsr"
+	dsrerrors "github.com/deja-app/dsr-verifier-cli/internal/errors"
+	"github.com/deja-app/dsr-verifier-cli/internal/verdict"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -689,6 +691,40 @@ func derivePatternSignature(zone, temporal, cascade bool) string {
 	return "nominal"
 }
 
+// anomalyCategoryByClass maps an error class to its anomaly category.
+//
+// Keyed off the dsrerrors CONSTANTS, not raw string literals. The previous
+// switch used literals ("signature_invalid", ...), so a rename or type change on
+// ErrorClass could never surface this site.
+//
+// Membership here is not the only gate: a failure must also carry
+// verdict.Failed. A class in this map still contributes nothing when the receipt
+// was cannot_verify.
+var anomalyCategoryByClass = map[dsrerrors.ErrorClass]AnomalyCategory{
+	dsrerrors.SignatureInvalid:    CategorySignatureMismatches,
+	dsrerrors.ContentHashMismatch: CategorySignatureMismatches,
+	dsrerrors.MalformedReceipt:    CategoryMissingEntries,
+}
+
+// nonAnomalyClasses are the classes deliberately excluded from cluster analysis,
+// with the reason recorded so the exclusion is a decision rather than an
+// oversight. Every class in dsrerrors.AllClasses must appear in exactly one of
+// these two tables; TestEveryErrorClassIsClassified enforces that.
+var nonAnomalyClasses = map[dsrerrors.ErrorClass]string{
+	dsrerrors.KeyAuthorityMismatch: "the auditor holds the wrong key — a limit of " +
+		"this verification attempt, identical for every receipt in the bundle, so it " +
+		"carries no per-receipt signal to cluster",
+	dsrerrors.HashChainBroken: "chain breaks are a bundle-level property already " +
+		"reported by sequence integrity; CategoryBrokenChainRefs is populated from " +
+		"that path, not from per-receipt failures",
+	dsrerrors.MalformedCausalRef: "a malformed reference inside an otherwise valid " +
+		"receipt says nothing about substitution or deletion",
+	dsrerrors.KeyParseError: "the key file could not be parsed — a property of the " +
+		"auditor's input, not of any receipt",
+	dsrerrors.UnsupportedAlgorithm: "this verifier does not implement the algorithm; " +
+		"nothing was compared, so there is no finding to cluster",
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ExtractAnomalies builds the []Anomaly input from a BundleVerifyResult.
 // This is the bridge between the existing verification output and
@@ -713,15 +749,42 @@ func ExtractAnomalies(res *BundleVerifyResult, receipts []*ParsedReceipt) []Anom
 		zone := extractServiceZone(r)
 		ts := extractTimestamp(r)
 
+		// STATE GATE. Only a receipt whose signature comparison actually ran and
+		// disagreed may enter the anomaly set.
+		//
+		// Without this gate, any verifier-side limitation — an unimplemented
+		// canonical form, an incomplete envelope, a missing key — became a
+		// CategorySignatureMismatches anomaly, because verify.Signature collapses
+		// all of them into error_class "signature_invalid". Those anomalies then
+		// fed testZoneConcentration and testTemporalClustering, which report
+		// p_value_lt "<0.001" on screen and in the archived report.
+		//
+		// The consequence was not a mislabelled row. testTemporalClustering
+		// estimates its own baseline from the anomaly set
+		// (lambda = len(times)/bundleHours), so when a verifier-side defect makes
+		// every receipt an anomaly, the anomaly set IS the receipt set and the test
+		// stops measuring whether tampering clusters in time: it measures whether
+		// RECEIPTS WERE ISSUED IN BURSTS, and reports that under the heading of
+		// tamper concentration. testZoneConcentration likewise reports the
+		// distribution of receipts across zones as the distribution of tampering,
+		// naming a dominant_zone that is merely the zone with the most receipts.
+		//
+		// MinAnomalyThreshold does not mitigate this. It requires 10 anomalies, so
+		// it filters out the single-receipt case and admits precisely the systemic
+		// ones — it fires only when every receipt is implicated, which is exactly
+		// when an auditor is most likely to act on it.
+		if f.State != verdict.Failed {
+			continue
+		}
+
 		for _, e := range f.Errors {
-			var cat AnomalyCategory
-			switch e.Class {
-			case "signature_invalid", "content_hash_mismatch":
-				cat = CategorySignatureMismatches
-			case "malformed_receipt":
-				cat = CategoryMissingEntries
-			default:
-				continue // skip unknown classes
+			cat, ok := anomalyCategoryByClass[e.Class]
+			if !ok {
+				// Excluded by design, or a class nobody has classified yet. Either way
+				// it must not enter statistical analysis on a guess.
+				// TestEveryErrorClassIsClassified makes the second case impossible to
+				// introduce silently.
+				continue
 			}
 			anomalies = append(anomalies, Anomaly{
 				Category:    cat,
