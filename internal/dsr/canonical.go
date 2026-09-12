@@ -66,10 +66,10 @@ func CanonicalPayload(e *Envelope) (string, error) {
 
 func attributionCanonical(e *Envelope) (string, error) {
 	if e.Repository == nil {
-		return "", fmt.Errorf("attribution receipt missing repository")
+		return "", &EnvelopeIncompleteError{Kind: "attribution", MissingFields: []string{"repository"}}
 	}
 	if e.PRNumber == nil {
-		return "", fmt.Errorf("attribution receipt missing pr_number")
+		return "", &EnvelopeIncompleteError{Kind: "attribution", MissingFields: []string{"pr_number"}}
 	}
 	// v3-jcs and v4-jcs mandatory field presence check.
 	// The TypeScript issuer guarantees these three fields on every v3/v4 R1 receipt.
@@ -77,14 +77,27 @@ func attributionCanonical(e *Envelope) (string, error) {
 	// non-conforming issuer — reject before computing canonical bytes.
 	fv := e.FormVersion()
 	if fv == "v3-jcs" || fv == "v4-jcs" {
+		// Collected into ONE error carrying the full field list, in canonical key
+		// order, rather than returning on the first absence. The field list is what
+		// makes the condition actionable. Message is byte-identical to the old
+		// fmt.Errorf when exactly one field is absent; when more than one is absent
+		// the old message under-reported and this one names them all.
+		// Collected in the order the pre-existing checks ran, so MissingFields[0]
+		// is the field the old single-field message named. See EnvelopeIncompleteError.
+		var missing []string
 		if e.SigningKeyID == nil {
-			return "", fmt.Errorf("%s attribution receipt missing required field: signing_key_id", fv)
+			missing = append(missing, "signing_key_id")
 		}
 		if e.SignatureAlgorithm == nil {
-			return "", fmt.Errorf("%s attribution receipt missing required field: signature_algorithm", fv)
+			missing = append(missing, "signature_algorithm")
 		}
 		if e.TemporalBasis == nil {
-			return "", fmt.Errorf("%s attribution receipt missing required field: temporal_basis", fv)
+			missing = append(missing, "temporal_basis")
+		}
+		if len(missing) > 0 {
+			return "", &EnvelopeIncompleteError{
+				Kind: "attribution", FormVersion: fv, MissingFields: missing,
+			}
 		}
 	}
 
@@ -199,19 +212,19 @@ func attributionCanonical(e *Envelope) (string, error) {
 
 func resolutionCanonical(e *Envelope) (string, error) {
 	if e.AttributionReceiptID == nil {
-		return "", fmt.Errorf("resolution receipt missing attribution_receipt_id")
+		return "", &EnvelopeIncompleteError{Kind: "resolution", MissingFields: []string{"attribution_receipt_id"}}
 	}
 	if e.IncidentID == nil {
-		return "", fmt.Errorf("resolution receipt missing incident_id")
+		return "", &EnvelopeIncompleteError{Kind: "resolution", MissingFields: []string{"incident_id"}}
 	}
 	if e.ResolvedAt == nil {
-		return "", fmt.Errorf("resolution receipt missing resolved_at")
+		return "", &EnvelopeIncompleteError{Kind: "resolution", MissingFields: []string{"resolved_at"}}
 	}
 	if e.GateEvaluatedAt == nil {
-		return "", fmt.Errorf("resolution receipt missing gate_evaluated_at")
+		return "", &EnvelopeIncompleteError{Kind: "resolution", MissingFields: []string{"gate_evaluated_at"}}
 	}
 	if e.TimeToResolutionMs == nil {
-		return "", fmt.Errorf("resolution receipt missing time_to_resolution_ms")
+		return "", &EnvelopeIncompleteError{Kind: "resolution", MissingFields: []string{"time_to_resolution_ms"}}
 	}
 	// v3-jcs and v4-jcs mandatory signing identity. temporal_basis is optional on
 	// R2 (populated only when gate window anchored to deploy time via D5 — the
@@ -219,11 +232,19 @@ func resolutionCanonical(e *Envelope) (string, error) {
 	// TypeScript canonicaliseResolutionReceiptJCS behaviour).
 	rfv := e.FormVersion()
 	if rfv == "v3-jcs" || rfv == "v4-jcs" {
+		// One error with the full field list, collected in original check order.
+		// See the note in attributionCanonical.
+		var missing []string
 		if e.SigningKeyID == nil {
-			return "", fmt.Errorf("%s resolution receipt missing required field: signing_key_id", rfv)
+			missing = append(missing, "signing_key_id")
 		}
 		if e.SignatureAlgorithm == nil {
-			return "", fmt.Errorf("%s resolution receipt missing required field: signature_algorithm", rfv)
+			missing = append(missing, "signature_algorithm")
+		}
+		if len(missing) > 0 {
+			return "", &EnvelopeIncompleteError{
+				Kind: "resolution", FormVersion: rfv, MissingFields: missing,
+			}
 		}
 	}
 

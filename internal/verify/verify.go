@@ -25,6 +25,7 @@ import (
 
 	"github.com/deja-app/dsr-verifier-cli/internal/dsr"
 	dsrerrors "github.com/deja-app/dsr-verifier-cli/internal/errors"
+	"github.com/deja-app/dsr-verifier-cli/internal/verdict"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,7 +89,22 @@ func KeyAuthority(e *dsr.Envelope, provided *PublicKeyWithID) *KeyAuthorityResul
 
 // SignatureResult is returned by Signature.
 type SignatureResult struct {
-	Valid           bool
+	Valid bool
+
+	// State is the three-state verdict for this check.
+	//
+	// It is carried SEPARATELY from Err.Class deliberately. Err.Class is frozen
+	// on the --json wire and in the audit log for the 1.7 release, and nine
+	// consumers currently derive behaviour or display from it: Tampered()
+	// (bundle/verify.go:55), Missing() (:69), the cluster-analysis anomaly
+	// categoriser (cluster_analysis.go:696) and six human print sites. If those
+	// consumers read the class, the deliberate freeze poisons all of them. They
+	// must read State instead.
+	//
+	// Nothing reads State yet. Migrating the fourteen aggregation sites needs
+	// §9's aggregation rule, which is not in hand. Populating it now is what
+	// makes that migration a rename rather than a re-derivation.
+	State           verdict.State
 	Algorithm       string
 	CanonicalLen    int
 	PublicKeyDigest string // sha256:<16-hex-char prefix>
@@ -109,6 +125,13 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 	canonical, err := dsr.CanonicalPayload(e)
 	if err != nil {
 		res.Valid = false
+		// A mandatory field is required to CONSTRUCT the canonical bytes. If it is
+		// absent, the bytes were never constructed — we did not rebuild the payload
+		// and find a mismatch, we never rebuilt it. Reporting a failed signature
+		// here asserts a check that did not run.
+		//
+		// Err.Class stays SignatureInvalid for 1.7 (deliberately stale on the wire).
+		res.State = verdict.CannotVerify
 		res.Err = dsrerrors.New(
 			dsrerrors.SignatureInvalid,
 			"The verifier could not construct the canonical signed payload for this receipt. "+
@@ -127,6 +150,9 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 	case dsr.AlgoED25519V1:
 		if provided == nil {
 			res.Valid = false
+			// The check never ran: no key, wrong key type, or undecodable
+			// signature bytes. Nothing was compared.
+			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
 				"The receipt uses algorithm \"ed25519-v1\" but no public key was provided. "+
@@ -138,6 +164,9 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		pub, ok := provided.Key.(ed25519.PublicKey)
 		if !ok {
 			res.Valid = false
+			// The check never ran: no key, wrong key type, or undecodable
+			// signature bytes. Nothing was compared.
+			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
 				"The receipt uses algorithm \"ed25519-v1\" but the provided key is not an Ed25519 key.",
@@ -149,6 +178,9 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		sigBytes, decErr := base64.StdEncoding.DecodeString(e.Signature)
 		if decErr != nil {
 			res.Valid = false
+			// The check never ran: no key, wrong key type, or undecodable
+			// signature bytes. Nothing was compared.
+			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
 				"The receipt's signature field is not valid base64.",
@@ -158,6 +190,9 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		}
 		if !ed25519.Verify(pub, canonicalBytes, sigBytes) {
 			res.Valid = false
+			// The check ran over reconstructed bytes and disagreed. This is the only
+			// condition in Signature() that is an assertion about the receipt.
+			res.State = verdict.Failed
 			res.Err = signatureFailedErr(algo, e.SigningKeyID)
 			return res
 		}
@@ -165,6 +200,9 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 	case dsr.AlgoRSAPSSSHA256:
 		if provided == nil {
 			res.Valid = false
+			// The check never ran: no key, wrong key type, or undecodable
+			// signature bytes. Nothing was compared.
+			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
 				"The receipt uses algorithm \"rsa-pss-sha256\" but no BYOK public key was provided. "+
@@ -176,6 +214,9 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		pub, ok := provided.Key.(*rsa.PublicKey)
 		if !ok {
 			res.Valid = false
+			// The check never ran: no key, wrong key type, or undecodable
+			// signature bytes. Nothing was compared.
+			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
 				"The receipt uses algorithm \"rsa-pss-sha256\" but the provided key is not an RSA key.",
@@ -188,6 +229,9 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		sigBytes, decErr := base64.StdEncoding.DecodeString(e.Signature)
 		if decErr != nil {
 			res.Valid = false
+			// The check never ran: no key, wrong key type, or undecodable
+			// signature bytes. Nothing was compared.
+			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
 				"The receipt's signature field is not valid base64.",
@@ -197,6 +241,9 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		}
 		if !verifyRSAPSS(pub, canonicalBytes, sigBytes) {
 			res.Valid = false
+			// The check ran over reconstructed bytes and disagreed. This is the only
+			// condition in Signature() that is an assertion about the receipt.
+			res.State = verdict.Failed
 			res.Err = signatureFailedErr(algo, e.SigningKeyID)
 			return res
 		}
@@ -204,6 +251,9 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 	case dsr.AlgoECDSASHA256:
 		if provided == nil {
 			res.Valid = false
+			// The check never ran: no key, wrong key type, or undecodable
+			// signature bytes. Nothing was compared.
+			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
 				"The receipt uses algorithm \"ecdsa-sha256\" but no BYOK public key was provided. "+
@@ -215,6 +265,9 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		pub, ok := provided.Key.(*ecdsa.PublicKey)
 		if !ok {
 			res.Valid = false
+			// The check never ran: no key, wrong key type, or undecodable
+			// signature bytes. Nothing was compared.
+			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
 				"The receipt uses algorithm \"ecdsa-sha256\" but the provided key is not an ECDSA key.",
@@ -227,6 +280,9 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		sigBytes, decErr := base64.StdEncoding.DecodeString(e.Signature)
 		if decErr != nil {
 			res.Valid = false
+			// The check never ran: no key, wrong key type, or undecodable
+			// signature bytes. Nothing was compared.
+			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
 				"The receipt's signature field is not valid base64.",
@@ -237,12 +293,18 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		hashed := sha256.Sum256(canonicalBytes)
 		if !ecdsa.VerifyASN1(pub, hashed[:], sigBytes) {
 			res.Valid = false
+			// The check ran over reconstructed bytes and disagreed. This is the only
+			// condition in Signature() that is an assertion about the receipt.
+			res.State = verdict.Failed
 			res.Err = signatureFailedErr(algo, e.SigningKeyID)
 			return res
 		}
 
 	default:
 		res.Valid = false
+		// This verifier does not implement the declared algorithm; nothing was
+		// compared.
+		res.State = verdict.CannotVerify
 		res.Err = dsrerrors.New(
 			dsrerrors.UnsupportedAlgorithm,
 			fmt.Sprintf("Algorithm %q is not supported by this verifier.", algo),
@@ -251,6 +313,7 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		return res
 	}
 
+	res.State = verdict.Verified
 	res.Valid = true
 	return res
 }
@@ -264,6 +327,8 @@ func verifySHA256Legacy(e *dsr.Envelope, canonicalBytes []byte, res *SignatureRe
 	storedBytes, err := hex.DecodeString(e.Signature)
 	if err != nil {
 		res.Valid = false
+		// Undecodable signature bytes: nothing was compared.
+		res.State = verdict.CannotVerify
 		res.Err = dsrerrors.New(
 			dsrerrors.SignatureInvalid,
 			"The receipt's signature field is not valid hex (expected for sha256-legacy).",
@@ -274,6 +339,8 @@ func verifySHA256Legacy(e *dsr.Envelope, canonicalBytes []byte, res *SignatureRe
 
 	if subtle.ConstantTimeCompare(sum[:], storedBytes) != 1 {
 		res.Valid = false
+		// The hash was computed and compared, and it disagreed.
+		res.State = verdict.Failed
 		res.Err = dsrerrors.New(
 			dsrerrors.SignatureInvalid,
 			fmt.Sprintf(
@@ -286,6 +353,7 @@ func verifySHA256Legacy(e *dsr.Envelope, canonicalBytes []byte, res *SignatureRe
 		return res
 	}
 
+	res.State = verdict.Verified
 	res.Valid = true
 	return res
 }
@@ -328,10 +396,10 @@ func keyDigest(keyBytes []byte) string {
 
 // ChainHashResult is returned by VerifyChainHash.
 type ChainHashResult struct {
-	Valid    bool
-	Checked  int // number of consecutive pairs verified
-	Skipped  bool
-	Err      *dsrerrors.VerificationError
+	Valid   bool
+	Checked int // number of consecutive pairs verified
+	Skipped bool
+	Err     *dsrerrors.VerificationError
 }
 
 // VerifyChainHash checks that each receipt's prior_hash equals

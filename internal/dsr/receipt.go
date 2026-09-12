@@ -10,8 +10,6 @@
 // large values, breaking signature verification.
 package dsr
 
-import "fmt"
-
 // Receipt type constants.
 const (
 	TypeR0  = "R0"
@@ -204,17 +202,31 @@ func (e *Envelope) FormVersion() string {
 // software. Refusing the form is honest and actionable.
 func (e *Envelope) ValidateFormVersion() error {
 	fv := e.FormVersion()
-	switch fv {
-	case "v1-legacy", "v2-jcs", "v3-jcs", "v4-jcs", "confirmation-rg-v1":
-		return nil
-	default:
-		return fmt.Errorf(
-			"unsupported canonical_form_version %q: this verifier implements "+
-				"v1-legacy, v2-jcs, v3-jcs, v4-jcs, confirmation-rg-v1 — upgrade the verifier to "+
-				"check receipts issued under %q",
-			fv, fv,
-		)
+	for _, impl := range ImplementedFormVersions {
+		if fv == impl {
+			return nil
+		}
 	}
+	// Typed so internal/verify can tell "this verifier does not implement the
+	// form" from "the signature disagreed". The message is byte-identical to the
+	// fmt.Errorf it replaces; see the COPY SLOT note in canonical_errors.go.
+	return &FormNotImplementedError{
+		FormVersion: fv,
+		Implemented: ImplementedFormVersions,
+	}
+}
+
+// ImplementedFormVersions is the canonical_form_version allowlist for this
+// build, in spec order. It is the ONLY list of implemented forms.
+//
+// WARNING: adding a version here is NOT sufficient to support it. Four
+// independent version enumerations in canonical.go (:79, :193, :221, :275) also
+// gate behaviour on the form version. Adding "v5-jcs" here and nowhere else
+// yields v3-shaped canonical bytes for a v5 receipt — the same failure as the
+// 2026-08-13 v3-jcs production incident, but now past the guard built to catch
+// it. Consolidating those four sites is tracked separately from this list.
+var ImplementedFormVersions = []string{
+	"v1-legacy", "v2-jcs", "v3-jcs", "v4-jcs", "confirmation-rg-v1",
 }
 
 // IsAttributionType reports whether t is R1.
