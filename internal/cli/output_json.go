@@ -25,9 +25,17 @@ type JSONOutput struct {
 
 // JSONChecks holds the per-check result summary.
 type JSONChecks struct {
-	KeyAuthority        JSONCheckResult `json:"key_authority"`
-	Signature           JSONCheckResult `json:"signature"`
-	SignalObservation   JSONCheckResult `json:"signal_observation_hash,omitempty"`
+	KeyAuthority JSONCheckResult `json:"key_authority"`
+	Signature    JSONCheckResult `json:"signature"`
+	// Pointer so that omitempty actually omits it. As a JSONCheckResult value the
+	// field always marshalled, and its zero value is {"passed": false} — a check
+	// reporting a verdict it never reached, on every receipt that carries no
+	// signal_observation_hash at all. The guard at the population site was
+	// already correct; the struct tag silently discarded it.
+	//
+	// Sibling precedent: ClusterAnalysis (output_bundle.go) is a pointer, and
+	// output_bundle_test.go asserts its absence when nil.
+	SignalObservation *JSONCheckResult `json:"signal_observation_hash,omitempty"`
 }
 
 // JSONCheckResult is the result of a single verification check.
@@ -86,8 +94,8 @@ func buildJSONOutput(r *VerifyResults) *JSONOutput {
 
 	if r.Sig != nil {
 		det := map[string]interface{}{
-			"algorithm":        r.Sig.Algorithm,
-			"canonical_len":    r.Sig.CanonicalLen,
+			"algorithm":         r.Sig.Algorithm,
+			"canonical_len":     r.Sig.CanonicalLen,
 			"public_key_sha256": r.Sig.PublicKeyDigest,
 		}
 		b, _ := json.Marshal(det)
@@ -98,7 +106,7 @@ func buildJSONOutput(r *VerifyResults) *JSONOutput {
 	}
 
 	if r.SignalObs != nil {
-		out.Checks.SignalObservation = JSONCheckResult{
+		out.Checks.SignalObservation = &JSONCheckResult{
 			Passed:  r.SignalObs.Valid,
 			Skipped: r.SignalObs.Skipped,
 		}
@@ -129,15 +137,15 @@ func buildJSONOutput(r *VerifyResults) *JSONOutput {
 
 // JSONInfoOutput is the --json output for the info command.
 type JSONInfoOutput struct {
-	Version     string `json:"version"`
-	ReceiptID   string `json:"receipt_id"`
-	ReceiptType string `json:"receipt_type"`
-	VaultID     string `json:"vault_id"`
-	Timestamp   string `json:"timestamp"`
+	Version      string `json:"version"`
+	ReceiptID    string `json:"receipt_id"`
+	ReceiptType  string `json:"receipt_type"`
+	VaultID      string `json:"vault_id"`
+	Timestamp    string `json:"timestamp"`
 	SigningKeyID string `json:"signing_key_id,omitempty"`
-	Algorithm   string `json:"signing_algorithm"`
-	Verified    bool   `json:"verified"`
-	Note        string `json:"note"`
+	Algorithm    string `json:"signing_algorithm"`
+	Verified     bool   `json:"verified"`
+	Note         string `json:"note"`
 }
 
 // WriteJSONInfo emits the info JSON document to w.

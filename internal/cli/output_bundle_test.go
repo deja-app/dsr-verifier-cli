@@ -14,6 +14,9 @@ import (
 	"github.com/deja-app/dsr-verifier-cli/internal/cli"
 )
 
+// windowPtr takes the address of a time value for the *time.Time window fields.
+func windowPtr(t time.Time) *time.Time { return &t }
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -78,8 +81,8 @@ func clusterResultAllDetected() *bundle.ClusterAnalysisResult {
 		},
 		TemporalClustering: bundle.TemporalClusteringResult{
 			Detected:          true,
-			WindowStart:       window,
-			WindowEnd:         window.Add(72 * time.Hour),
+			WindowStart:       &window,
+			WindowEnd:         windowPtr(window.Add(72 * time.Hour)),
 			WindowHours:       72,
 			AnomaliesInWindow: 38,
 			Multiplier:        18.3,
