@@ -16,11 +16,12 @@ import (
 // These tests pin the three-state mapping in Signature() and, more importantly,
 // pin the rule that produced it:
 //
-//	the check RAN and disagreed        → Failed
-//	the check never ran to a conclusion → CannotVerify
+//	a COMPLETED COMPARISON THAT DISAGREED → Failed
+//	anything short of that                → CannotVerify
 //
-// Only a cryptographic comparison that was actually performed and came back
-// negative is an assertion about the receipt. Everything else — an
+// Failed is an accusation: it claims the evidence was altered. Only a
+// cryptographic comparison actually performed and negative supports that claim.
+// Everything else — an
 // unimplemented canonical form, an incomplete envelope, an absent key, a
 // wrong-type key, undecodable signature bytes, an unimplemented algorithm — is
 // a statement about what this verifier could not do.
@@ -108,7 +109,7 @@ func TestSignatureState_NoPathLeavesStateUnset(t *testing.T) {
 			build: func() *dsr.Envelope { return edGood },
 			key:   nil,
 			want:  verdict.CannotVerify,
-			why:   "no key, nothing was compared",
+			why:   "no key: the comparison was never performed",
 		},
 		{
 			name: "ed25519 receipt, signature not base64",
@@ -150,7 +151,7 @@ func TestSignatureState_NoPathLeavesStateUnset(t *testing.T) {
 				return e
 			},
 			want: verdict.CannotVerify,
-			why:  "algorithm not implemented, nothing was compared",
+			why:  "algorithm not implemented: the comparison was never performed",
 		},
 		{
 			name: "sha256-legacy, signature not hex",

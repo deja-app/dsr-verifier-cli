@@ -39,7 +39,17 @@ const (
 	// Verified means the check ran and the receipt satisfied it.
 	Verified
 
-	// Failed means the check ran and the receipt did not satisfy it.
+	// Failed means the check ran to completion and the receipt did not satisfy it.
+	//
+	// THE RULE: Failed is reserved for a COMPLETED COMPARISON THAT DISAGREED.
+	//
+	// Failed is an accusation. It claims the evidence was altered. So it must not
+	// be used for conditions that only establish that the verifier could not
+	// finish — a missing key, an unimplemented form, an incomplete envelope, or
+	// signature bytes that will not decode. Undecodable bytes are the sharpest
+	// case: damage and alteration are different claims, transit corruption
+	// produces the former, and a verifier that cannot distinguish them must not
+	// assert the accusing one.
 	Failed
 
 	// CannotVerify means the check did not run to a conclusion. The verifier

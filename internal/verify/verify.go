@@ -150,8 +150,8 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 	case dsr.AlgoED25519V1:
 		if provided == nil {
 			res.Valid = false
-			// The check never ran: no key, wrong key type, or undecodable
-			// signature bytes. Nothing was compared.
+			// The check never ran: this verifier was not given what it needs to
+			// perform the comparison. Nothing about the receipt is asserted.
 			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
@@ -164,8 +164,8 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		pub, ok := provided.Key.(ed25519.PublicKey)
 		if !ok {
 			res.Valid = false
-			// The check never ran: no key, wrong key type, or undecodable
-			// signature bytes. Nothing was compared.
+			// The check never ran: this verifier was not given what it needs to
+			// perform the comparison. Nothing about the receipt is asserted.
 			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
@@ -178,8 +178,13 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		sigBytes, decErr := base64.StdEncoding.DecodeString(e.Signature)
 		if decErr != nil {
 			res.Valid = false
-			// The check never ran: no key, wrong key type, or undecodable
-			// signature bytes. Nothing was compared.
+			// Undecodable signature bytes are DAMAGE, not ALTERATION, and only
+			// alteration is a failed verdict. failed claims the signature did not
+			// check out — a claim that the evidence was changed. Bytes that will not
+			// decode could equally be transit corruption, and this verifier cannot
+			// tell the two apart, so it must not assert the accusing one.
+			//
+			// The rule: failed is reserved for a COMPLETED COMPARISON THAT DISAGREED.
 			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
@@ -200,8 +205,8 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 	case dsr.AlgoRSAPSSSHA256:
 		if provided == nil {
 			res.Valid = false
-			// The check never ran: no key, wrong key type, or undecodable
-			// signature bytes. Nothing was compared.
+			// The check never ran: this verifier was not given what it needs to
+			// perform the comparison. Nothing about the receipt is asserted.
 			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
@@ -214,8 +219,8 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		pub, ok := provided.Key.(*rsa.PublicKey)
 		if !ok {
 			res.Valid = false
-			// The check never ran: no key, wrong key type, or undecodable
-			// signature bytes. Nothing was compared.
+			// The check never ran: this verifier was not given what it needs to
+			// perform the comparison. Nothing about the receipt is asserted.
 			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
@@ -229,8 +234,13 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		sigBytes, decErr := base64.StdEncoding.DecodeString(e.Signature)
 		if decErr != nil {
 			res.Valid = false
-			// The check never ran: no key, wrong key type, or undecodable
-			// signature bytes. Nothing was compared.
+			// Undecodable signature bytes are DAMAGE, not ALTERATION, and only
+			// alteration is a failed verdict. failed claims the signature did not
+			// check out — a claim that the evidence was changed. Bytes that will not
+			// decode could equally be transit corruption, and this verifier cannot
+			// tell the two apart, so it must not assert the accusing one.
+			//
+			// The rule: failed is reserved for a COMPLETED COMPARISON THAT DISAGREED.
 			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
@@ -251,8 +261,8 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 	case dsr.AlgoECDSASHA256:
 		if provided == nil {
 			res.Valid = false
-			// The check never ran: no key, wrong key type, or undecodable
-			// signature bytes. Nothing was compared.
+			// The check never ran: this verifier was not given what it needs to
+			// perform the comparison. Nothing about the receipt is asserted.
 			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
@@ -265,8 +275,8 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		pub, ok := provided.Key.(*ecdsa.PublicKey)
 		if !ok {
 			res.Valid = false
-			// The check never ran: no key, wrong key type, or undecodable
-			// signature bytes. Nothing was compared.
+			// The check never ran: this verifier was not given what it needs to
+			// perform the comparison. Nothing about the receipt is asserted.
 			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
@@ -280,8 +290,13 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 		sigBytes, decErr := base64.StdEncoding.DecodeString(e.Signature)
 		if decErr != nil {
 			res.Valid = false
-			// The check never ran: no key, wrong key type, or undecodable
-			// signature bytes. Nothing was compared.
+			// Undecodable signature bytes are DAMAGE, not ALTERATION, and only
+			// alteration is a failed verdict. failed claims the signature did not
+			// check out — a claim that the evidence was changed. Bytes that will not
+			// decode could equally be transit corruption, and this verifier cannot
+			// tell the two apart, so it must not assert the accusing one.
+			//
+			// The rule: failed is reserved for a COMPLETED COMPARISON THAT DISAGREED.
 			res.State = verdict.CannotVerify
 			res.Err = dsrerrors.New(
 				dsrerrors.SignatureInvalid,
@@ -327,7 +342,9 @@ func verifySHA256Legacy(e *dsr.Envelope, canonicalBytes []byte, res *SignatureRe
 	storedBytes, err := hex.DecodeString(e.Signature)
 	if err != nil {
 		res.Valid = false
-		// Undecodable signature bytes: nothing was compared.
+		// Undecodable signature bytes are damage, not alteration. See the rule in
+		// the ed25519 base64 path: failed is reserved for a completed comparison
+		// that disagreed, because failed claims the evidence was changed.
 		res.State = verdict.CannotVerify
 		res.Err = dsrerrors.New(
 			dsrerrors.SignatureInvalid,
