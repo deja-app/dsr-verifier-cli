@@ -57,6 +57,7 @@ func TestGolden_RV_CanonicalVector(t *testing.T) {
 
 	inp := vec.Input
 	attested := inp.ReceiptsAttestedCount
+	algo := dsr.AlgoED25519V1
 	e := &dsr.Envelope{
 		Type:                    dsr.TypeRV,
 		ReceiptID:               inp.ReceiptID,
@@ -76,6 +77,7 @@ func TestGolden_RV_CanonicalVector(t *testing.T) {
 		VerificationResult:      &inp.VerificationResult,
 		FailedCheckType:         inp.FailedCheckType,
 		FailureReason:           inp.FailureReason,
+		SignatureAlgorithm:      &algo,
 	}
 
 	assertCanonical(t, e, vec.CanonicalJSON, vec.CanonicalSHA256)
@@ -120,6 +122,7 @@ func TestGolden_RVManual_CanonicalVector(t *testing.T) {
 	valid := inp.ValidCount
 	invalid := inp.InvalidCount
 	verified := inp.VerifiedReceiptCount
+	algo := dsr.AlgoED25519V1
 	e := &dsr.Envelope{
 		Type:                 dsr.TypeRV,
 		ReceiptID:            inp.ReceiptID,
@@ -137,6 +140,7 @@ func TestGolden_RVManual_CanonicalVector(t *testing.T) {
 		VerifierClient:       &inp.VerifierClient,
 		VerifierIdentityHash: &inp.VerifierIdentityHash,
 		PreviousHash:         inp.PreviousHash,
+		SignatureAlgorithm:   &algo,
 		// RVType intentionally nil — selects rvManualCanonical path
 	}
 
@@ -180,23 +184,111 @@ func TestGolden_RE_CanonicalVector(t *testing.T) {
 
 	inp := vec.Input
 	scope := inp.ReceiptsInScope
+	algo := dsr.AlgoED25519V1
 	e := &dsr.Envelope{
-		Type:            dsr.TypeRE,
-		ReceiptID:       inp.ReceiptID,
-		VaultID:         inp.VaultID,
-		DSRVersion:      inp.Version,
-		Timestamp:       inp.IssuedAt,
-		Actor:           inp.Actor,
-		Signature:       "placeholder",
-		IssuedAt:        &inp.IssuedAt,
-		EngagementID:    &inp.EngagementID,
-		ExpiresAt:       &inp.ExpiresAt,
-		RecipientHash:   &inp.RecipientHash,
-		ReceiptsInScope: &scope,
-		ScopeHash:       &inp.ScopeHash,
-		Permissions:     inp.Permissions,
-		PriorHash:       inp.PriorHash,
-		RevokedAt:       inp.RevokedAt,
+		Type:               dsr.TypeRE,
+		ReceiptID:          inp.ReceiptID,
+		VaultID:            inp.VaultID,
+		DSRVersion:         inp.Version,
+		Timestamp:          inp.IssuedAt,
+		Actor:              inp.Actor,
+		Signature:          "placeholder",
+		IssuedAt:           &inp.IssuedAt,
+		EngagementID:       &inp.EngagementID,
+		ExpiresAt:          &inp.ExpiresAt,
+		RecipientHash:      &inp.RecipientHash,
+		ReceiptsInScope:    &scope,
+		ScopeHash:          &inp.ScopeHash,
+		Permissions:        inp.Permissions,
+		PriorHash:          inp.PriorHash,
+		RevokedAt:          inp.RevokedAt,
+		SignatureAlgorithm: &algo,
+	}
+
+	assertCanonical(t, e, vec.CanonicalJSON, vec.CanonicalSHA256)
+}
+
+// ─── RV sha256-legacy vector (c332) ───────────────────────────────────────
+
+type rvSha256LegacyVectorInput struct {
+	Actor              string  `json:"actor"`
+	ReceiptID          string  `json:"receiptId"`
+	Timestamp          string  `json:"timestamp"`
+	Type               string  `json:"type"`
+	VaultID            string  `json:"vaultId"`
+	Version            string  `json:"version"`
+	SignatureAlgorithm *string `json:"signatureAlgorithm"`
+}
+
+type rvSha256LegacyVectorFile struct {
+	Input           rvSha256LegacyVectorInput `json:"input"`
+	CanonicalJSON   string                    `json:"canonical_json"`
+	CanonicalSHA256 string                    `json:"canonical_sha256"`
+}
+
+func TestGolden_RVSha256Legacy_CanonicalVector(t *testing.T) {
+	raw, err := os.ReadFile("../../testdata/protocol/rv-sha256-legacy-canonical-vector.json")
+	if err != nil {
+		t.Fatalf("read vector file: %v", err)
+	}
+	var vec rvSha256LegacyVectorFile
+	if err := json.Unmarshal(raw, &vec); err != nil {
+		t.Fatalf("parse vector file: %v", err)
+	}
+
+	inp := vec.Input
+	e := &dsr.Envelope{
+		Type:               dsr.TypeRV,
+		ReceiptID:          inp.ReceiptID,
+		VaultID:            inp.VaultID,
+		DSRVersion:         inp.Version,
+		Timestamp:          inp.Timestamp,
+		Actor:              inp.Actor,
+		Signature:          "placeholder",
+		SignatureAlgorithm: inp.SignatureAlgorithm, // nil → sha256-legacy path
+	}
+
+	assertCanonical(t, e, vec.CanonicalJSON, vec.CanonicalSHA256)
+}
+
+// ─── RE sha256-legacy vector (c332) ───────────────────────────────────────
+
+type reSha256LegacyVectorInput struct {
+	Actor              string  `json:"actor"`
+	ReceiptID          string  `json:"receiptId"`
+	Timestamp          string  `json:"timestamp"`
+	Type               string  `json:"type"`
+	VaultID            string  `json:"vaultId"`
+	Version            string  `json:"version"`
+	SignatureAlgorithm *string `json:"signatureAlgorithm"`
+}
+
+type reSha256LegacyVectorFile struct {
+	Input           reSha256LegacyVectorInput `json:"input"`
+	CanonicalJSON   string                    `json:"canonical_json"`
+	CanonicalSHA256 string                    `json:"canonical_sha256"`
+}
+
+func TestGolden_RESha256Legacy_CanonicalVector(t *testing.T) {
+	raw, err := os.ReadFile("../../testdata/protocol/re-sha256-legacy-canonical-vector.json")
+	if err != nil {
+		t.Fatalf("read vector file: %v", err)
+	}
+	var vec reSha256LegacyVectorFile
+	if err := json.Unmarshal(raw, &vec); err != nil {
+		t.Fatalf("parse vector file: %v", err)
+	}
+
+	inp := vec.Input
+	e := &dsr.Envelope{
+		Type:               dsr.TypeRE,
+		ReceiptID:          inp.ReceiptID,
+		VaultID:            inp.VaultID,
+		DSRVersion:         inp.Version,
+		Timestamp:          inp.Timestamp,
+		Actor:              inp.Actor,
+		Signature:          "placeholder",
+		SignatureAlgorithm: inp.SignatureAlgorithm, // nil → sha256-legacy path
 	}
 
 	assertCanonical(t, e, vec.CanonicalJSON, vec.CanonicalSHA256)

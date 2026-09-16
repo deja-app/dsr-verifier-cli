@@ -37,15 +37,29 @@ func CanonicalPayload(e *Envelope) (string, error) {
 		// carries highest_candidate_ccs, lookback_days, prs_evaluated, receipt_id.
 		return noAttributionCanonical(e)
 	case e.Type == TypeRV:
-		// Two RV sub-types share the "RV" type string but use different canonical forms.
-		// RVType ("rv-i" / "rv-f") is present only on integrity-monitor run receipts.
-		// Absent RVType → manual verifier receipt (sde_verification_receipts).
+		// c332 · sha256-legacy RV receipts (issued before migration 0278 added
+		// Ed25519 vault signing) use the same 6-field form as otherCanonical.
+		// SigAlgo() treats nil and "" as "sha256-legacy", matching TypeScript's
+		// `receipt.signature_algorithm ?? "sha256-legacy"` (receipt-verifier/index.ts:656–668).
+		if e.SigAlgo() == AlgoSHA256Legacy {
+			return otherCanonical(e)
+		}
+		// Two Ed25519 RV sub-types share the "RV" type string but use different
+		// canonical forms. RVType ("rv-i" / "rv-f") is present only on
+		// integrity-monitor run receipts. Absent RVType → manual verifier receipt.
 		if e.RVType != nil {
 			return rvRunCanonical(e)
 		}
 		return rvManualCanonical(e)
 	case e.Type == TypeRE:
-		// RE (engagement receipts) use a 14-field signed canonical form.
+		// c332 · sha256-legacy RE receipts use the same 6-field form as otherCanonical,
+		// matching TypeScript receipt-verifier/index.ts:690–702.
+		// Before dbfeaeb, TypeRE had no case and fell through to default:otherCanonical —
+		// dbfeaeb introduced the TypeRE case and silently broke all pre-0278 RE receipts.
+		if e.SigAlgo() == AlgoSHA256Legacy {
+			return otherCanonical(e)
+		}
+		// Ed25519 RE receipts use the 14-field form.
 		return reCanonical(e)
 	case IsAttributionType(e.Type):
 		return attributionCanonical(e)
