@@ -146,20 +146,20 @@ func TestGolden_RVManual_CanonicalVector(t *testing.T) {
 // ─── RE (sde_engagement_receipts) vector ──────────────────────────────────
 
 type reVectorInput struct {
-	Actor          string   `json:"actor"`
-	EngagementID   string   `json:"engagementId"`
-	ExpiresAt      string   `json:"expiresAt"`
-	IssuedAt       string   `json:"issuedAt"`
-	Permissions    []string `json:"permissions"`
-	PriorHash      *string  `json:"priorHash"`
-	ReceiptID      string   `json:"receiptId"`
-	ReceiptsInScope int64   `json:"receiptsInScope"`
-	RecipientHash  string   `json:"recipientHash"`
-	RevokedAt      *string  `json:"revokedAt"`
-	ScopeHash      string   `json:"scopeHash"`
-	Type           string   `json:"type"`
-	VaultID        string   `json:"vaultId"`
-	Version        string   `json:"version"`
+	Actor           string   `json:"actor"`
+	EngagementID    string   `json:"engagementId"`
+	ExpiresAt       string   `json:"expiresAt"`
+	IssuedAt        string   `json:"issuedAt"`
+	Permissions     []string `json:"permissions"`
+	PriorHash       *string  `json:"priorHash"`
+	ReceiptID       string   `json:"receiptId"`
+	ReceiptsInScope int64    `json:"receiptsInScope"`
+	RecipientHash   string   `json:"recipientHash"`
+	RevokedAt       *string  `json:"revokedAt"`
+	ScopeHash       string   `json:"scopeHash"`
+	Type            string   `json:"type"`
+	VaultID         string   `json:"vaultId"`
+	Version         string   `json:"version"`
 }
 
 type reVectorFile struct {
@@ -181,22 +181,22 @@ func TestGolden_RE_CanonicalVector(t *testing.T) {
 	inp := vec.Input
 	scope := inp.ReceiptsInScope
 	e := &dsr.Envelope{
-		Type:           dsr.TypeRE,
-		ReceiptID:      inp.ReceiptID,
-		VaultID:        inp.VaultID,
-		DSRVersion:     inp.Version,
-		Timestamp:      inp.IssuedAt,
-		Actor:          inp.Actor,
-		Signature:      "placeholder",
-		IssuedAt:       &inp.IssuedAt,
-		EngagementID:   &inp.EngagementID,
-		ExpiresAt:      &inp.ExpiresAt,
-		RecipientHash:  &inp.RecipientHash,
+		Type:            dsr.TypeRE,
+		ReceiptID:       inp.ReceiptID,
+		VaultID:         inp.VaultID,
+		DSRVersion:      inp.Version,
+		Timestamp:       inp.IssuedAt,
+		Actor:           inp.Actor,
+		Signature:       "placeholder",
+		IssuedAt:        &inp.IssuedAt,
+		EngagementID:    &inp.EngagementID,
+		ExpiresAt:       &inp.ExpiresAt,
+		RecipientHash:   &inp.RecipientHash,
 		ReceiptsInScope: &scope,
-		ScopeHash:      &inp.ScopeHash,
-		Permissions:    inp.Permissions,
-		PriorHash:      inp.PriorHash,
-		RevokedAt:      inp.RevokedAt,
+		ScopeHash:       &inp.ScopeHash,
+		Permissions:     inp.Permissions,
+		PriorHash:       inp.PriorHash,
+		RevokedAt:       inp.RevokedAt,
 	}
 
 	assertCanonical(t, e, vec.CanonicalJSON, vec.CanonicalSHA256)

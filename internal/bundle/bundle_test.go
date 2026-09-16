@@ -150,15 +150,15 @@ func minimalManifest(
 ) *bundle.Manifest {
 	t.Helper()
 	m := &bundle.Manifest{
-		Format:      bundle.BundleFormat,
-		BundleID:    "bndl_test_001",
-		VaultID:     "vlt_bundle_test",
-		IssuedAt:    time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC),
-		PeriodStart: "2026-05-01",
-		PeriodEnd:   "2026-05-31",
-		Frameworks:  []string{"SOC 2"},
-		IssuerKeyID: "key_bundle_test",
-		Entries:     entries,
+		Format:       bundle.BundleFormat,
+		BundleID:     "bndl_test_001",
+		VaultID:      "vlt_bundle_test",
+		IssuedAt:     time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC),
+		PeriodStart:  "2026-05-01",
+		PeriodEnd:    "2026-05-31",
+		Frameworks:   []string{"SOC 2"},
+		IssuerKeyID:  "key_bundle_test",
+		Entries:      entries,
 		ReceiptCount: len(entries),
 	}
 	payload, err := bundle.CanonicalManifestPayload(m)

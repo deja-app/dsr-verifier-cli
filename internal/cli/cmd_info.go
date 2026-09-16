@@ -82,13 +82,13 @@ func runInfo(args []string, stdout, stderr io.Writer) int {
 
 	if opts.json {
 		out := &JSONInfoOutput{
-			Version:     Version,
-			ReceiptID:   envelope.ReceiptID,
-			ReceiptType: envelope.Type,
-			VaultID:     envelope.VaultID,
-			Timestamp:   envelope.Timestamp,
+			Version:      Version,
+			ReceiptID:    envelope.ReceiptID,
+			ReceiptType:  envelope.Type,
+			VaultID:      envelope.VaultID,
+			Timestamp:    envelope.Timestamp,
 			SigningKeyID: keyID,
-			Algorithm:   envelope.SigAlgo(),
+			Algorithm:    envelope.SigAlgo(),
 		}
 		if encErr := WriteJSONInfo(stdout, out); encErr != nil {
 			fmt.Fprintf(stderr, "error: %v\n", encErr)

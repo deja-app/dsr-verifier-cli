@@ -28,11 +28,11 @@ type BundleVerifyResult struct {
 	Frameworks  []string
 	IssuerKeyID string
 
-	ManifestSig    ManifestSigResult
-	SequenceInteg  SeqIntegResult
-	PerReceipt     PerReceiptResult
-	CausalChain    CausalChainResult
-	RVCoverage     RVCoverageResult
+	ManifestSig     ManifestSigResult
+	SequenceInteg   SeqIntegResult
+	PerReceipt      PerReceiptResult
+	CausalChain     CausalChainResult
+	RVCoverage      RVCoverageResult
 	ClusterAnalysis ClusterAnalysisResult
 
 	DurationMS int64
@@ -77,9 +77,9 @@ func (r *BundleVerifyResult) Missing() int {
 
 // ManifestSigResult is returned by VerifyManifestSignature.
 type ManifestSigResult struct {
-	Valid   bool
-	KeyID   string
-	Err     *dsrerrors.VerificationError
+	Valid bool
+	KeyID string
+	Err   *dsrerrors.VerificationError
 }
 
 // SeqIntegResult is returned by VerifySequenceIntegrity.

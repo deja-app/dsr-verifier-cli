@@ -43,40 +43,40 @@ var KnownTypes = map[string]bool{
 
 // Envelope is the parsed .dsr receipt shared with auditors.
 type Envelope struct {
-	DSRVersion           string      `json:"dsr_version"`
-	Type                 string      `json:"type"`
-	ReceiptID            string      `json:"receipt_id"`
-	VaultID              string      `json:"vault_id"`
-	OrganizationID       string      `json:"organization_id"` // RG receipts: org-scoped, no vault_id
-	Timestamp            string      `json:"timestamp"`
-	Actor                string      `json:"actor"`
-	Origin               string      `json:"origin"`
-	Signature            string      `json:"signature"`
-	SignatureAlgorithm   *string     `json:"signature_algorithm"`
-	CanonicalFormVersion *string     `json:"canonical_form_version"`
-	PriorHash            *string     `json:"prior_hash"`
-	SigningKeyID         *string     `json:"signing_key_id"`
+	DSRVersion           string  `json:"dsr_version"`
+	Type                 string  `json:"type"`
+	ReceiptID            string  `json:"receipt_id"`
+	VaultID              string  `json:"vault_id"`
+	OrganizationID       string  `json:"organization_id"` // RG receipts: org-scoped, no vault_id
+	Timestamp            string  `json:"timestamp"`
+	Actor                string  `json:"actor"`
+	Origin               string  `json:"origin"`
+	Signature            string  `json:"signature"`
+	SignatureAlgorithm   *string `json:"signature_algorithm"`
+	CanonicalFormVersion *string `json:"canonical_form_version"`
+	PriorHash            *string `json:"prior_hash"`
+	SigningKeyID         *string `json:"signing_key_id"`
 
 	// Attribution fields (R1 only)
-	Repository           *string     `json:"repository"`
-	PRNumber             *int64      `json:"pr_number"`
-	ServiceZone          *string     `json:"service_zone"`
-	ErrorClass           *string     `json:"error_class"`
-	MissingField         *string     `json:"missing_field"`
-	CCSScore             *string     `json:"ccs_score"`
-	Matched              *string     `json:"matched"`
-	Confidence           *string     `json:"confidence"`
-	ProducerGraphScore   *string     `json:"producer_graph_score"`
-	SchemaStabilityScore *string     `json:"schema_stability_score"`
-	IsSynthetic          *bool       `json:"is_synthetic"`
-	IsInternalValidation *bool       `json:"is_internal_validation"`
-	IsTrial              *bool       `json:"is_trial"`
-	IssuedAt             *string     `json:"issued_at"`
+	Repository           *string `json:"repository"`
+	PRNumber             *int64  `json:"pr_number"`
+	ServiceZone          *string `json:"service_zone"`
+	ErrorClass           *string `json:"error_class"`
+	MissingField         *string `json:"missing_field"`
+	CCSScore             *string `json:"ccs_score"`
+	Matched              *string `json:"matched"`
+	Confidence           *string `json:"confidence"`
+	ProducerGraphScore   *string `json:"producer_graph_score"`
+	SchemaStabilityScore *string `json:"schema_stability_score"`
+	IsSynthetic          *bool   `json:"is_synthetic"`
+	IsInternalValidation *bool   `json:"is_internal_validation"`
+	IsTrial              *bool   `json:"is_trial"`
+	IssuedAt             *string `json:"issued_at"`
 	// AnchoringBasis ("deploy"|"merge") sorts before ccs_score; omit-null.
-	AnchoringBasis       *string     `json:"anchoring_basis"`
+	AnchoringBasis *string `json:"anchoring_basis"`
 	// TemporalBasis ("deployed"|"merged_fallback") sorts after signing_algorithm; omit-null.
-	TemporalBasis        *string     `json:"temporal_basis"`
-	CCSFactors           *CCSFactors `json:"ccs_factors"`
+	TemporalBasis *string     `json:"temporal_basis"`
+	CCSFactors    *CCSFactors `json:"ccs_factors"`
 	// DSR/1.0.4 fields — signed into canonical at 1.0.4+, omit-if-null.
 	// SignalObservationHash is SHA-256-hex of the JCS-serialised SignalObservation.
 	SignalObservationHash *string `json:"signal_observation_hash"`
@@ -129,21 +129,21 @@ type Envelope struct {
 	PreviousHash *string `json:"previous_hash"`
 
 	// Engagement receipt fields (RE only)
-	ExpiresAt      *string  `json:"expires_at"`
-	RecipientHash  *string  `json:"recipient_hash"`
-	ReceiptsInScope *int64  `json:"receipts_in_scope"`
-	ScopeHash      *string  `json:"scope_hash"`
-	Permissions    []string `json:"permissions"`
-	RevokedAt      *string  `json:"revoked_at"`
+	ExpiresAt       *string  `json:"expires_at"`
+	RecipientHash   *string  `json:"recipient_hash"`
+	ReceiptsInScope *int64   `json:"receipts_in_scope"`
+	ScopeHash       *string  `json:"scope_hash"`
+	Permissions     []string `json:"permissions"`
+	RevokedAt       *string  `json:"revoked_at"`
 
 	// Governance fields (RG) — org-scoped, no vault_id
-	ChangeType          *string `json:"change_type"`
-	PriorStateHash      *string `json:"prior_state_hash"`
-	NewStateHash        *string `json:"new_state_hash"`
+	ChangeType     *string `json:"change_type"`
+	PriorStateHash *string `json:"prior_state_hash"`
+	NewStateHash   *string `json:"new_state_hash"`
 	// ConfirmedReceiptID is present only on confirmation RG receipts
 	// (change_type R1L_CONFIRMED / R1L_REJECTED). Its presence selects the
 	// 8-field confirmation canonical form in place of the 9-field standard form.
-	ConfirmedReceiptID  *string `json:"confirmed_receipt_id"`
+	ConfirmedReceiptID *string `json:"confirmed_receipt_id"`
 
 	// Resolution fields (R2, R2-F, R2-R)
 	AttributionReceiptID *string `json:"attribution_receipt_id"`

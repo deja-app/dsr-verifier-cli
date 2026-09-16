@@ -95,8 +95,8 @@ func ed25519PubKeyFile(pub ed25519.PublicKey, keyID string) []byte {
 	return []byte(b64 + "\n")
 }
 
-func ptrStr(s string) *string  { return &s }
-func ptrInt64(n int64) *int64  { return &n }
+func ptrStr(s string) *string { return &s }
+func ptrInt64(n int64) *int64 { return &n }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Passing cases

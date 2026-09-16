@@ -509,20 +509,20 @@ func reCanonical(e *Envelope) (string, error) {
 	sort.Strings(sorted)
 
 	m := map[string]any{
-		"actor":            e.Actor,
-		"engagement_id":    strDeref(e.EngagementID, ""),
-		"expires_at":       strDeref(e.ExpiresAt, ""),
-		"issued_at":        issuedAt,
-		"permissions":      sorted,
-		"prior_hash":       anyNullableStr(e.PriorHash),
-		"receipt_id":       e.ReceiptID,
+		"actor":             e.Actor,
+		"engagement_id":     strDeref(e.EngagementID, ""),
+		"expires_at":        strDeref(e.ExpiresAt, ""),
+		"issued_at":         issuedAt,
+		"permissions":       sorted,
+		"prior_hash":        anyNullableStr(e.PriorHash),
+		"receipt_id":        e.ReceiptID,
 		"receipts_in_scope": receiptsInScope,
-		"recipient_hash":   strDeref(e.RecipientHash, ""),
-		"revoked_at":       anyNullableStr(e.RevokedAt),
-		"scope_hash":       strDeref(e.ScopeHash, ""),
-		"type":             e.Type,
-		"vault_id":         e.VaultID,
-		"version":          e.DSRVersion,
+		"recipient_hash":    strDeref(e.RecipientHash, ""),
+		"revoked_at":        anyNullableStr(e.RevokedAt),
+		"scope_hash":        strDeref(e.ScopeHash, ""),
+		"type":              e.Type,
+		"vault_id":          e.VaultID,
+		"version":           e.DSRVersion,
 	}
 	return jcsSerialise(m)
 }

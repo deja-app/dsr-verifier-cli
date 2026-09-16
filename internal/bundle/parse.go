@@ -21,7 +21,7 @@ type Bundle struct {
 // ParsedReceipt pairs a manifest entry with its parsed receipt (or a parse error).
 type ParsedReceipt struct {
 	Entry    ManifestEntry
-	Receipt  *dsr.Envelope              // nil if ParseErr is set
+	Receipt  *dsr.Envelope // nil if ParseErr is set
 	ParseErr *dsrerrors.VerificationError
 }
 

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/deja-app/dsr-verifier-cli/internal/verify"
 	dsrerrors "github.com/deja-app/dsr-verifier-cli/internal/errors"
+	"github.com/deja-app/dsr-verifier-cli/internal/verify"
 )
 
 // SignalObsResult holds the result of the signal_observation_hash check.
