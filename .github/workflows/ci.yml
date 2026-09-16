@@ -7,6 +7,37 @@ on:
     branches: [main]
 
 jobs:
+  fmt:
+    name: Format (gofmt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ github.token }}
+
+      - uses: actions/setup-go@v5
+        with:
+          # Pinned rather than matrixed: gofmt output can differ between Go
+          # releases, so the gate must be deterministic. Keep in step with the
+          # `go` directive in go.mod.
+          go-version: '1.22.3'
+          cache: true
+
+      - name: Check formatting
+        # `gofmt -l .` walks the whole tree, including testdata/, which
+        # `go vet ./...` skips -- internal/verify/testdata/gen holds real Go
+        # source that no other job compiles or checks.
+        run: |
+          UNFORMATTED=$(gofmt -l .)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "The following files are not gofmt-clean:"
+            echo "$UNFORMATTED"
+            echo ""
+            echo "  Fix: gofmt -w ."
+            exit 1
+          fi
+          echo "gofmt OK -- tree is clean"
+
   test:
     name: Test (Go ${{ matrix.go }})
     runs-on: ubuntu-latest
