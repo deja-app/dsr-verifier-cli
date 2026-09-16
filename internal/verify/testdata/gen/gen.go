@@ -218,9 +218,10 @@ type rvFields struct {
 // canonicaliseRvReceipt() in rv-receipt-canonical.ts.
 //
 // Field order must be Unicode code-point alphabetical:
-//   checks_passed, issued_at, receipt_id, receipts_attested_count, rv_type,
-//   vault_id, verification_completed_at, verification_mode,
-//   verification_run_id, verification_started_at
+//
+//	checks_passed, issued_at, receipt_id, receipts_attested_count, rv_type,
+//	vault_id, verification_completed_at, verification_mode,
+//	verification_run_id, verification_started_at
 func canonicalRvPayload(f rvFields) ([]byte, error) {
 	payload := struct {
 		ChecksPassed            []string `json:"checks_passed"`
@@ -251,22 +252,22 @@ func canonicalRvPayload(f rvFields) ([]byte, error) {
 // writeRVReceiptJSON writes an RV receipt to path.
 func writeRVReceiptJSON(path string, receiptType string, f rvFields, contentHash string, content json.RawMessage, sig []byte) error {
 	receipt := map[string]interface{}{
-		"id":                       f.receiptID,
-		"version":                  "DSR/1.0",
-		"type":                     receiptType,
-		"vault_id":                 f.vaultID,
-		"issued_at":                f.issuedAt,
-		"content":                  content,
-		"content_hash":             contentHash,
-		"signing_key_id":           "key_fixture_rv_2026",
-		"signing_algorithm":        "ed25519",
-		"signature":                hex.EncodeToString(sig),
-		"checks_passed":            f.checksPassed,
-		"receipts_attested_count":  f.receiptsAttestedCount,
-		"rv_type":                  f.rvType,
-		"verification_run_id":      f.verificationRunID,
-		"verification_mode":        f.verificationMode,
-		"verification_started_at":  f.verificationStartedAt,
+		"id":                        f.receiptID,
+		"version":                   "DSR/1.0",
+		"type":                      receiptType,
+		"vault_id":                  f.vaultID,
+		"issued_at":                 f.issuedAt,
+		"content":                   content,
+		"content_hash":              contentHash,
+		"signing_key_id":            "key_fixture_rv_2026",
+		"signing_algorithm":         "ed25519",
+		"signature":                 hex.EncodeToString(sig),
+		"checks_passed":             f.checksPassed,
+		"receipts_attested_count":   f.receiptsAttestedCount,
+		"rv_type":                   f.rvType,
+		"verification_run_id":       f.verificationRunID,
+		"verification_mode":         f.verificationMode,
+		"verification_started_at":   f.verificationStartedAt,
 		"verification_completed_at": f.verificationCompletedAt,
 	}
 	b, err := json.MarshalIndent(receipt, "", "  ")

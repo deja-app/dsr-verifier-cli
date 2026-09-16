@@ -328,10 +328,10 @@ func keyDigest(keyBytes []byte) string {
 
 // ChainHashResult is returned by VerifyChainHash.
 type ChainHashResult struct {
-	Valid    bool
-	Checked  int // number of consecutive pairs verified
-	Skipped  bool
-	Err      *dsrerrors.VerificationError
+	Valid   bool
+	Checked int // number of consecutive pairs verified
+	Skipped bool
+	Err     *dsrerrors.VerificationError
 }
 
 // VerifyChainHash checks that each receipt's prior_hash equals

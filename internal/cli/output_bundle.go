@@ -334,9 +334,9 @@ type BundleJSONChecks struct {
 }
 
 type BundleJSONPerReceipt struct {
-	Total  int                        `json:"total"`
-	Passed int                        `json:"passed"`
-	Failed int                        `json:"failed"`
+	Total  int                           `json:"total"`
+	Passed int                           `json:"passed"`
+	Failed int                           `json:"failed"`
 	ByType map[string]*bundle.TypeResult `json:"by_type"`
 }
 

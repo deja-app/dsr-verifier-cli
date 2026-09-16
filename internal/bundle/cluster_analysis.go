@@ -46,16 +46,16 @@ type Anomaly struct {
 
 // ClusterAnalysisResult is the top-level output of cluster_analysis_v1.
 type ClusterAnalysisResult struct {
-	Version            string                   `json:"version"` // "cluster_analysis_v1"
-	AnomalyCount       int                      `json:"anomaly_count"`
-	Skipped            bool                     `json:"skipped,omitempty"` // true when count < MinAnomalyThreshold
-	ZoneConcentration  ZoneConcentrationResult  `json:"zone_concentration"`
-	TemporalClustering TemporalClusteringResult `json:"temporal_clustering"`
-	CascadeDetected    CascadeResult            `json:"cascade_detected"`
-	PatternSignature            string  `json:"pattern_signature"`
-	PatternSignatureConfidence  float64 `json:"pattern_signature_confidence"`
-	ConfidenceScore             float64 `json:"confidence_score"`
-	ConfidenceRationale         string  `json:"confidence_rationale,omitempty"`
+	Version                    string                   `json:"version"` // "cluster_analysis_v1"
+	AnomalyCount               int                      `json:"anomaly_count"`
+	Skipped                    bool                     `json:"skipped,omitempty"` // true when count < MinAnomalyThreshold
+	ZoneConcentration          ZoneConcentrationResult  `json:"zone_concentration"`
+	TemporalClustering         TemporalClusteringResult `json:"temporal_clustering"`
+	CascadeDetected            CascadeResult            `json:"cascade_detected"`
+	PatternSignature           string                   `json:"pattern_signature"`
+	PatternSignatureConfidence float64                  `json:"pattern_signature_confidence"`
+	ConfidenceScore            float64                  `json:"confidence_score"`
+	ConfidenceRationale        string                   `json:"confidence_rationale,omitempty"`
 }
 
 // ZoneConcentrationResult reports whether anomalies cluster in one service zone.
@@ -83,9 +83,9 @@ type TemporalClusteringResult struct {
 // CascadeResult reports whether anomalies in different categories implicate
 // the same receipts, suggesting a single root-cause event.
 type CascadeResult struct {
-	Detected         bool                `json:"detected"`
-	OverlappingIDs   []string            `json:"overlapping_receipt_ids,omitempty"`
-	CategoryOverlaps []CategoryOverlap   `json:"category_overlaps,omitempty"`
+	Detected         bool              `json:"detected"`
+	OverlappingIDs   []string          `json:"overlapping_receipt_ids,omitempty"`
+	CategoryOverlaps []CategoryOverlap `json:"category_overlaps,omitempty"`
 }
 
 // CategoryOverlap is one pair of categories with a measured Jaccard similarity.
@@ -164,10 +164,10 @@ func AnalyseClusterPatterns(anomalies []Anomaly) ClusterAnalysisResult {
 // derivePatternSignatureConfidence returns a [0, 1] confidence for how cleanly
 // the observed anomaly signals match the named pattern's expected fingerprint.
 //
-//   ≥ 0.9 — all expected signals present, no contradicting evidence
-//   0.6–0.9 — most expected signals present, some ambiguity
-//   < 0.6  — weak match; multiple candidate patterns possible
-//   0.0    — no pattern detected
+//	≥ 0.9 — all expected signals present, no contradicting evidence
+//	0.6–0.9 — most expected signals present, some ambiguity
+//	< 0.6  — weak match; multiple candidate patterns possible
+//	0.0    — no pattern detected
 func derivePatternSignatureConfidence(pattern string, zone, temporal, cascade bool) float64 {
 	switch pattern {
 	case "consistent_with_targeted_deletion":
@@ -214,13 +214,14 @@ func derivePatternSignatureConfidence(pattern string, zone, temporal, cascade bo
 // ConfidenceScore = 1 − combined_p_value.
 //
 // P-value assignments (only for tests that actually ran):
-//   zone:     PValueLT == "<0.001" → p = 0.001; ran-but-not-detected → p = 0.5.
-//             Excluded entirely when NumZones == 0 (no zone info available).
-//   temporal: PValueLT == "<0.001" → p = 0.001; ran-but-not-detected → p = 0.5.
-//             Excluded entirely when AnomaliesInWindow == 0 and Multiplier == 0
-//             (insufficient timestamps to run the test).
-//   cascade:  Always included. Jaccard ≥ 0.5 → p ≈ 0.01 (honest approximation —
-//             Jaccard is not a true p-value; see inline note). Not-detected → p = 0.5.
+//
+//	zone:     PValueLT == "<0.001" → p = 0.001; ran-but-not-detected → p = 0.5.
+//	          Excluded entirely when NumZones == 0 (no zone info available).
+//	temporal: PValueLT == "<0.001" → p = 0.001; ran-but-not-detected → p = 0.5.
+//	          Excluded entirely when AnomaliesInWindow == 0 and Multiplier == 0
+//	          (insufficient timestamps to run the test).
+//	cascade:  Always included. Jaccard ≥ 0.5 → p ≈ 0.01 (honest approximation —
+//	          Jaccard is not a true p-value; see inline note). Not-detected → p = 0.5.
 //
 // When fewer than 3 tests produce valid p-values (some tests were not applicable),
 // Fisher's method runs with however many are available; the rationale notes the count.
@@ -340,7 +341,9 @@ func combinePValuesFisher(pvalues []float64) float64 {
 // chi2SurvivalEvenDF computes P(chi²(df) > chi2Stat) for even df.
 //
 // For even df = 2k the survival function is exact via the Poisson CDF identity:
-//   Q(k, x) = P(Poisson(x) ≤ k−1) = e^(−x) Σ_{i=0}^{k−1} x^i / i!
+//
+//	Q(k, x) = P(Poisson(x) ≤ k−1) = e^(−x) Σ_{i=0}^{k−1} x^i / i!
+//
 // where x = chi2Stat / 2 and k = df / 2.
 //
 // This requires no external library — Go's math package is sufficient.
@@ -377,8 +380,8 @@ func chi2SurvivalEvenDF(chi2Stat float64, df int) float64 {
 // testZoneConcentration applies a chi-squared goodness-of-fit test against
 // the uniform null hypothesis (anomalies equally distributed across zones).
 //
-//   χ² = Σ (observed_i - expected_i)² / expected_i,   df = numZones - 1
-//   expected_i = total / numZones  (uniform)
+//	χ² = Σ (observed_i - expected_i)² / expected_i,   df = numZones - 1
+//	expected_i = total / numZones  (uniform)
 //
 // Detection: p < ZonePValueThreshold (0.001).
 func testZoneConcentration(anomalies []Anomaly) ZoneConcentrationResult {
@@ -471,11 +474,13 @@ func chi2CriticalP001(df int) float64 {
 // highest anomaly density and compares it to the Poisson baseline rate.
 //
 // Null: anomalies arrive as a homogeneous Poisson process with rate
-//   λ = total_anomalies / bundle_duration_hours.
+//
+//	λ = total_anomalies / bundle_duration_hours.
 //
 // Statistic: multiplier = (count_in_window) / (λ × ScanWindowHours).
 // Detection: multiplier ≥ TemporalMultiplierThreshold AND count ≥ 3
-//            AND Poisson p-value < 0.001.
+//
+//	AND Poisson p-value < 0.001.
 func testTemporalClustering(anomalies []Anomaly) TemporalClusteringResult {
 	const W = float64(ScanWindowHours)
 
@@ -498,7 +503,7 @@ func testTemporalClustering(anomalies []Anomaly) TemporalClusteringResult {
 	}
 
 	lambda := float64(len(times)) / bundleHours // baseline rate per hour
-	lambdaW := lambda * W                        // expected count in window under null
+	lambdaW := lambda * W                       // expected count in window under null
 
 	// Scan: for each start time (one per anomaly), count how many fall within W hours.
 	windowEnd := time.Duration(W * float64(time.Hour))
@@ -578,9 +583,9 @@ func testCascade(anomalies []Anomaly) CascadeResult {
 	sort.Slice(cats, func(i, j int) bool { return cats[i] < cats[j] })
 
 	var (
-		pairs         []CategoryOverlap
-		allShared     = make(map[string]bool)
-		cascadeFound  bool
+		pairs        []CategoryOverlap
+		allShared    = make(map[string]bool)
+		cascadeFound bool
 	)
 
 	for i := 0; i < len(cats); i++ {
@@ -644,13 +649,13 @@ func testCascade(anomalies []Anomaly) CascadeResult {
 
 // derivePatternSignature returns a deterministic label from the three test booleans.
 //
-//  cascade=true                                        → consistent_with_targeted_deletion
-//  zone=true  + temporal=true  + cascade=false         → consistent_with_mass_rekey
-//  zone=false + temporal=true  + cascade=true          → consistent_with_mass_rekey
-//  zone=true  + temporal=false + cascade=false         → consistent_with_isolated_corruption
-//  zone=false + temporal=true  + cascade=false         → inconclusive
-//  zone=false + temporal=false + cascade=true          → inconclusive
-//  all false                                           → nominal
+//	cascade=true                                        → consistent_with_targeted_deletion
+//	zone=true  + temporal=true  + cascade=false         → consistent_with_mass_rekey
+//	zone=false + temporal=true  + cascade=true          → consistent_with_mass_rekey
+//	zone=true  + temporal=false + cascade=false         → consistent_with_isolated_corruption
+//	zone=false + temporal=true  + cascade=false         → inconclusive
+//	zone=false + temporal=false + cascade=true          → inconclusive
+//	all false                                           → nominal
 func derivePatternSignature(zone, temporal, cascade bool) string {
 	if cascade {
 		return "consistent_with_targeted_deletion"
