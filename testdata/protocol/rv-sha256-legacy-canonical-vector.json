@@ -1,0 +1,25 @@
+{
+  "_comment": "AUTHORITATIVE protocol test vector for the RV sha256-legacy canonical form. RV receipts issued before migration 0278 (Ed25519 vault signing) carry signature_algorithm absent or 'sha256-legacy' and are signed over a 6-field form. The Go CLI (rvSha256LegacyCanonical in internal/dsr/canonical.go) must produce byte-identical output for this input. Distinguishing marker: signature_algorithm is absent (null in wire format).",
+  "_spec": "rvSha256LegacyCanonical — v1-legacy / sha256-legacy: sort all keys by Unicode code-point order, JSON.stringify compact. Signature is SHA-256_hex(canonical_bytes). Mirror of the inline branch in receipt-verifier/index.ts:656-668.",
+  "input": {
+    "actor": "verifier_abc123def456",
+    "receiptId": "RV-550e8400-e29b-41d4-a716-446655440010",
+    "timestamp": "2026-05-01T10:00:00.000Z",
+    "type": "RV",
+    "vaultId": "550e8400-e29b-41d4-a716-446655440001",
+    "version": "DSR/1.0",
+    "signatureAlgorithm": null
+  },
+  "wire_names": {
+    "actor": "verifier_abc123def456",
+    "receipt_id": "RV-550e8400-e29b-41d4-a716-446655440010",
+    "timestamp": "2026-05-01T10:00:00.000Z",
+    "type": "RV",
+    "vault_id": "550e8400-e29b-41d4-a716-446655440001",
+    "version": "DSR/1.0",
+    "signature_algorithm": null
+  },
+  "canonical_json": "{\"actor\":\"verifier_abc123def456\",\"receipt_id\":\"RV-550e8400-e29b-41d4-a716-446655440010\",\"timestamp\":\"2026-05-01T10:00:00.000Z\",\"type\":\"RV\",\"vault_id\":\"550e8400-e29b-41d4-a716-446655440001\",\"version\":\"DSR/1.0\"}",
+  "_note_on_canonical_hex": "canonical_sha256 is sha256(canonical_json encoded as UTF-8). The signature of a real receipt is SHA-256_hex(canonical_json) — the sha256 here IS the signature for this form.",
+  "canonical_sha256": "c4f61e9356ab82dc35811c59c50a9e05c10c2b9ada232662d2310b6505c232c1"
+}
