@@ -37,7 +37,6 @@ type rvRunVectorInput struct {
 	VerificationResult      string   `json:"verificationResult"`
 	FailedCheckType         *string  `json:"failedCheckType"`
 	FailureReason           *string  `json:"failureReason"`
-	SignatureAlgorithm      *string  `json:"signatureAlgorithm"`
 }
 
 type rvRunVectorFile struct {
@@ -58,6 +57,7 @@ func TestGolden_RV_CanonicalVector(t *testing.T) {
 
 	inp := vec.Input
 	attested := inp.ReceiptsAttestedCount
+	algo := dsr.AlgoED25519V1
 	e := &dsr.Envelope{
 		Type:                    dsr.TypeRV,
 		ReceiptID:               inp.ReceiptID,
@@ -77,7 +77,7 @@ func TestGolden_RV_CanonicalVector(t *testing.T) {
 		VerificationResult:      &inp.VerificationResult,
 		FailedCheckType:         inp.FailedCheckType,
 		FailureReason:           inp.FailureReason,
-		SignatureAlgorithm:      inp.SignatureAlgorithm,
+		SignatureAlgorithm:      &algo,
 	}
 
 	assertCanonical(t, e, vec.CanonicalJSON, vec.CanonicalSHA256)
@@ -100,7 +100,6 @@ type rvManualVectorInput struct {
 	VerifierClient       string  `json:"verifierClient"`
 	VerifierIdentityHash string  `json:"verifierIdentityHash"`
 	Version              string  `json:"version"`
-	SignatureAlgorithm   *string `json:"signatureAlgorithm"`
 }
 
 type rvManualVectorFile struct {
@@ -123,6 +122,7 @@ func TestGolden_RVManual_CanonicalVector(t *testing.T) {
 	valid := inp.ValidCount
 	invalid := inp.InvalidCount
 	verified := inp.VerifiedReceiptCount
+	algo := dsr.AlgoED25519V1
 	e := &dsr.Envelope{
 		Type:                 dsr.TypeRV,
 		ReceiptID:            inp.ReceiptID,
@@ -140,7 +140,7 @@ func TestGolden_RVManual_CanonicalVector(t *testing.T) {
 		VerifierClient:       &inp.VerifierClient,
 		VerifierIdentityHash: &inp.VerifierIdentityHash,
 		PreviousHash:         inp.PreviousHash,
-		SignatureAlgorithm:   inp.SignatureAlgorithm,
+		SignatureAlgorithm:   &algo,
 		// RVType intentionally nil — selects rvManualCanonical path
 	}
 
@@ -150,21 +150,20 @@ func TestGolden_RVManual_CanonicalVector(t *testing.T) {
 // ─── RE (sde_engagement_receipts) vector ──────────────────────────────────
 
 type reVectorInput struct {
-	Actor              string   `json:"actor"`
-	EngagementID       string   `json:"engagementId"`
-	ExpiresAt          string   `json:"expiresAt"`
-	IssuedAt           string   `json:"issuedAt"`
-	Permissions        []string `json:"permissions"`
-	PriorHash          *string  `json:"priorHash"`
-	ReceiptID          string   `json:"receiptId"`
-	ReceiptsInScope    int64    `json:"receiptsInScope"`
-	RecipientHash      string   `json:"recipientHash"`
-	RevokedAt          *string  `json:"revokedAt"`
-	ScopeHash          string   `json:"scopeHash"`
-	Type               string   `json:"type"`
-	VaultID            string   `json:"vaultId"`
-	Version            string   `json:"version"`
-	SignatureAlgorithm *string  `json:"signatureAlgorithm"`
+	Actor           string   `json:"actor"`
+	EngagementID    string   `json:"engagementId"`
+	ExpiresAt       string   `json:"expiresAt"`
+	IssuedAt        string   `json:"issuedAt"`
+	Permissions     []string `json:"permissions"`
+	PriorHash       *string  `json:"priorHash"`
+	ReceiptID       string   `json:"receiptId"`
+	ReceiptsInScope int64    `json:"receiptsInScope"`
+	RecipientHash   string   `json:"recipientHash"`
+	RevokedAt       *string  `json:"revokedAt"`
+	ScopeHash       string   `json:"scopeHash"`
+	Type            string   `json:"type"`
+	VaultID         string   `json:"vaultId"`
+	Version         string   `json:"version"`
 }
 
 type reVectorFile struct {
@@ -185,6 +184,7 @@ func TestGolden_RE_CanonicalVector(t *testing.T) {
 
 	inp := vec.Input
 	scope := inp.ReceiptsInScope
+	algo := dsr.AlgoED25519V1
 	e := &dsr.Envelope{
 		Type:               dsr.TypeRE,
 		ReceiptID:          inp.ReceiptID,
@@ -202,7 +202,7 @@ func TestGolden_RE_CanonicalVector(t *testing.T) {
 		Permissions:        inp.Permissions,
 		PriorHash:          inp.PriorHash,
 		RevokedAt:          inp.RevokedAt,
-		SignatureAlgorithm: inp.SignatureAlgorithm,
+		SignatureAlgorithm: &algo,
 	}
 
 	assertCanonical(t, e, vec.CanonicalJSON, vec.CanonicalSHA256)

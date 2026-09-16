@@ -38,13 +38,11 @@ func CanonicalPayload(e *Envelope) (string, error) {
 		return noAttributionCanonical(e)
 	case e.Type == TypeRV:
 		// c332 · sha256-legacy RV receipts (issued before migration 0278 added
-		// Ed25519 vault signing) use a 6-field form identical to the TypeScript
-		// verifier's inline branch (receipt-verifier/index.ts:656–668):
-		//   actor, receipt_id, timestamp, type, vault_id, version
-		// Ed25519 receipts use the two 13/14-field forms below.
-		// Mirror: receipt.signature_algorithm ?? "sha256-legacy" in TypeScript.
-		if e.SignatureAlgorithm == nil || *e.SignatureAlgorithm == "sha256-legacy" {
-			return rvSha256LegacyCanonical(e)
+		// Ed25519 vault signing) use the same 6-field form as otherCanonical.
+		// SigAlgo() treats nil and "" as "sha256-legacy", matching TypeScript's
+		// `receipt.signature_algorithm ?? "sha256-legacy"` (receipt-verifier/index.ts:656–668).
+		if e.SigAlgo() == AlgoSHA256Legacy {
+			return otherCanonical(e)
 		}
 		// Two Ed25519 RV sub-types share the "RV" type string but use different
 		// canonical forms. RVType ("rv-i" / "rv-f") is present only on
@@ -54,10 +52,12 @@ func CanonicalPayload(e *Envelope) (string, error) {
 		}
 		return rvManualCanonical(e)
 	case e.Type == TypeRE:
-		// c332 · sha256-legacy RE receipts use the same 6-field form as sha256-legacy
-		// RV, matching TypeScript receipt-verifier/index.ts:690–702.
-		if e.SignatureAlgorithm == nil || *e.SignatureAlgorithm == "sha256-legacy" {
-			return reSha256LegacyCanonical(e)
+		// c332 · sha256-legacy RE receipts use the same 6-field form as otherCanonical,
+		// matching TypeScript receipt-verifier/index.ts:690–702.
+		// Before dbfeaeb, TypeRE had no case and fell through to default:otherCanonical —
+		// dbfeaeb introduced the TypeRE case and silently broke all pre-0278 RE receipts.
+		if e.SigAlgo() == AlgoSHA256Legacy {
+			return otherCanonical(e)
 		}
 		// Ed25519 RE receipts use the 14-field form.
 		return reCanonical(e)
@@ -378,53 +378,6 @@ func confirmationGovernanceCanonical(e *Envelope) (string, error) {
 }
 
 func otherCanonical(e *Envelope) (string, error) {
-	m := map[string]any{
-		"actor":      e.Actor,
-		"receipt_id": e.ReceiptID,
-		"timestamp":  e.Timestamp,
-		"type":       e.Type,
-		"vault_id":   e.VaultID,
-		"version":    e.DSRVersion,
-	}
-	return jcsSerialise(m)
-}
-
-// rvSha256LegacyCanonical builds the 6-field canonical form for RV receipts
-// signed before migration 0278 introduced Ed25519 vault signing.
-//
-// Field order (Unicode sort):
-//
-//	actor, receipt_id, timestamp, type, vault_id, version
-//
-// This is the form the TypeScript verifier uses when signature_algorithm is
-// absent or "sha256-legacy" (receipt-verifier/index.ts:656–668). The signature
-// is SHA-256_hex(canonical_bytes).
-//
-// Mirror of the inline branch in deriveCanonicalPayload (TypeScript).
-func rvSha256LegacyCanonical(e *Envelope) (string, error) {
-	m := map[string]any{
-		"actor":      e.Actor,
-		"receipt_id": e.ReceiptID,
-		"timestamp":  e.Timestamp,
-		"type":       e.Type,
-		"vault_id":   e.VaultID,
-		"version":    e.DSRVersion,
-	}
-	return jcsSerialise(m)
-}
-
-// reSha256LegacyCanonical builds the 6-field canonical form for RE receipts
-// signed before migration 0278 introduced Ed25519 vault signing.
-//
-// Field order (Unicode sort):
-//
-//	actor, receipt_id, timestamp, type, vault_id, version
-//
-// Identical field set to rvSha256LegacyCanonical — both types used the same
-// 6-field content-hash form before Ed25519 signing was introduced.
-// Mirror of the inline branch in deriveCanonicalPayload (TypeScript),
-// receipt-verifier/index.ts:690–702.
-func reSha256LegacyCanonical(e *Envelope) (string, error) {
 	m := map[string]any{
 		"actor":      e.Actor,
 		"receipt_id": e.ReceiptID,
