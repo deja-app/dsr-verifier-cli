@@ -209,15 +209,24 @@ func TestGolden_RE_CanonicalVector(t *testing.T) {
 }
 
 // ─── RV sha256-legacy vector (c332) ───────────────────────────────────────
+//
+// 13-field form: rvManualCanonical without previous_hash — the form RV receipts
+// were ACTUALLY signed with before the Ed25519 cutover at migration 0278.
 
 type rvSha256LegacyVectorInput struct {
-	Actor              string  `json:"actor"`
-	ReceiptID          string  `json:"receiptId"`
-	Timestamp          string  `json:"timestamp"`
-	Type               string  `json:"type"`
-	VaultID            string  `json:"vaultId"`
-	Version            string  `json:"version"`
-	SignatureAlgorithm *string `json:"signatureAlgorithm"`
+	Actor                string  `json:"actor"`
+	EngagementID         *string `json:"engagementId"` // nullable
+	InvalidCount         int64   `json:"invalidCount"`
+	IssuedAt             string  `json:"issuedAt"`
+	ReceiptID            string  `json:"receiptId"`
+	Type                 string  `json:"type"`
+	ValidCount           int64   `json:"validCount"`
+	VaultID              string  `json:"vaultId"`
+	VerificationResult   string  `json:"verificationResult"`
+	VerifiedReceiptCount int64   `json:"verifiedReceiptCount"`
+	VerifierClient       string  `json:"verifierClient"`
+	VerifierIdentityHash string  `json:"verifierIdentityHash"`
+	Version              string  `json:"version"`
 }
 
 type rvSha256LegacyVectorFile struct {
@@ -237,30 +246,51 @@ func TestGolden_RVSha256Legacy_CanonicalVector(t *testing.T) {
 	}
 
 	inp := vec.Input
+	valid := inp.ValidCount
+	invalid := inp.InvalidCount
+	verified := inp.VerifiedReceiptCount
 	e := &dsr.Envelope{
-		Type:               dsr.TypeRV,
-		ReceiptID:          inp.ReceiptID,
-		VaultID:            inp.VaultID,
-		DSRVersion:         inp.Version,
-		Timestamp:          inp.Timestamp,
-		Actor:              inp.Actor,
-		Signature:          "placeholder",
-		SignatureAlgorithm: inp.SignatureAlgorithm, // nil → sha256-legacy path
+		Type:                 dsr.TypeRV,
+		ReceiptID:            inp.ReceiptID,
+		VaultID:              inp.VaultID,
+		DSRVersion:           inp.Version,
+		Timestamp:            inp.IssuedAt,
+		Actor:                inp.Actor,
+		Signature:            "placeholder",
+		IssuedAt:             &inp.IssuedAt,
+		EngagementID:         inp.EngagementID,
+		ValidCount:           &valid,
+		InvalidCount:         &invalid,
+		VerifiedReceiptCount: &verified,
+		VerificationResult:   &inp.VerificationResult,
+		VerifierClient:       &inp.VerifierClient,
+		VerifierIdentityHash: &inp.VerifierIdentityHash,
+		SignatureAlgorithm:   nil, // nil → sha256-legacy path (rvLegacyCanonical)
+		// RVType intentionally nil — not a run receipt
 	}
 
 	assertCanonical(t, e, vec.CanonicalJSON, vec.CanonicalSHA256)
 }
 
 // ─── RE sha256-legacy vector (c332) ───────────────────────────────────────
+//
+// 13-field form: reCanonical without prior_hash — the form RE receipts were
+// ACTUALLY signed with before the Ed25519 cutover at migration 0278.
 
 type reSha256LegacyVectorInput struct {
-	Actor              string  `json:"actor"`
-	ReceiptID          string  `json:"receiptId"`
-	Timestamp          string  `json:"timestamp"`
-	Type               string  `json:"type"`
-	VaultID            string  `json:"vaultId"`
-	Version            string  `json:"version"`
-	SignatureAlgorithm *string `json:"signatureAlgorithm"`
+	Actor           string   `json:"actor"`
+	EngagementID    string   `json:"engagementId"`
+	ExpiresAt       string   `json:"expiresAt"`
+	IssuedAt        string   `json:"issuedAt"`
+	Permissions     []string `json:"permissions"`
+	ReceiptID       string   `json:"receiptId"`
+	ReceiptsInScope int64    `json:"receiptsInScope"`
+	RecipientHash   string   `json:"recipientHash"`
+	RevokedAt       *string  `json:"revokedAt"` // nullable
+	ScopeHash       string   `json:"scopeHash"`
+	Type            string   `json:"type"`
+	VaultID         string   `json:"vaultId"`
+	Version         string   `json:"version"`
 }
 
 type reSha256LegacyVectorFile struct {
@@ -280,15 +310,24 @@ func TestGolden_RESha256Legacy_CanonicalVector(t *testing.T) {
 	}
 
 	inp := vec.Input
+	scope := inp.ReceiptsInScope
 	e := &dsr.Envelope{
 		Type:               dsr.TypeRE,
 		ReceiptID:          inp.ReceiptID,
 		VaultID:            inp.VaultID,
 		DSRVersion:         inp.Version,
-		Timestamp:          inp.Timestamp,
+		Timestamp:          inp.IssuedAt,
 		Actor:              inp.Actor,
 		Signature:          "placeholder",
-		SignatureAlgorithm: inp.SignatureAlgorithm, // nil → sha256-legacy path
+		IssuedAt:           &inp.IssuedAt,
+		EngagementID:       &inp.EngagementID,
+		ExpiresAt:          &inp.ExpiresAt,
+		RecipientHash:      &inp.RecipientHash,
+		ReceiptsInScope:    &scope,
+		ScopeHash:          &inp.ScopeHash,
+		Permissions:        inp.Permissions,
+		RevokedAt:          inp.RevokedAt,
+		SignatureAlgorithm: nil, // nil → sha256-legacy path (reLegacyCanonical)
 	}
 
 	assertCanonical(t, e, vec.CanonicalJSON, vec.CanonicalSHA256)

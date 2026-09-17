@@ -1,25 +1,22 @@
 {
-  "_comment": "AUTHORITATIVE protocol test vector for the RE sha256-legacy canonical form. RE receipts issued before migration 0278 (Ed25519 vault signing) carry signature_algorithm absent or 'sha256-legacy' and are signed over a 6-field form identical to the RV sha256-legacy form. The Go CLI (reSha256LegacyCanonical in internal/dsr/canonical.go) must produce byte-identical output for this input.",
-  "_spec": "reSha256LegacyCanonical — v1-legacy / sha256-legacy: sort all keys by Unicode code-point order, JSON.stringify compact. Signature is SHA-256_hex(canonical_bytes). Mirror of the inline branch in receipt-verifier/index.ts:690-702.",
+  "_comment": "AUTHORITATIVE protocol test vector for the RE sha256-legacy canonical form. RE receipts issued before the Ed25519 cutover at migration 0278 carry signature_algorithm absent or null and are signed over a 13-field form — reCanonical without prior_hash (which did not exist when these receipts were signed). The 6-field otherCanonical form was never issued by any version of the issuer.",
+  "_spec": "reLegacyCanonical — 13-field sha256-legacy: sort all keys by Unicode code-point order, JSON.stringify compact. Signature is SHA-256_hex(canonical_bytes). Mirror of canonicaliseEngagementReceiptLegacy() in packages/api/src/utils/canonical-receipt.ts.",
   "input": {
-    "actor": "user:550e8400-e29b-41d4-a716-000000000002",
-    "receiptId": "RE-550e8400-e29b-41d4-a716-446655440020",
-    "timestamp": "2026-05-01T10:00:00.000Z",
+    "actor": "system:re",
+    "engagementId": "ENG-test-001",
+    "expiresAt": "2027-08-01T00:00:00.000Z",
+    "issuedAt": "2026-08-01T00:00:00.000Z",
+    "permissions": ["read_receipts", "verify_receipts"],
+    "receiptId": "RE-legacy-001",
+    "receiptsInScope": 42,
+    "recipientHash": "abcdef1234567890abcdef1234567890",
+    "revokedAt": null,
+    "scopeHash": "fedcba0987654321fedcba0987654321",
     "type": "RE",
-    "vaultId": "550e8400-e29b-41d4-a716-446655440001",
-    "version": "DSR/1.0",
-    "signatureAlgorithm": null
+    "vaultId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    "version": "DSR/1.0"
   },
-  "wire_names": {
-    "actor": "user:550e8400-e29b-41d4-a716-000000000002",
-    "receipt_id": "RE-550e8400-e29b-41d4-a716-446655440020",
-    "timestamp": "2026-05-01T10:00:00.000Z",
-    "type": "RE",
-    "vault_id": "550e8400-e29b-41d4-a716-446655440001",
-    "version": "DSR/1.0",
-    "signature_algorithm": null
-  },
-  "canonical_json": "{\"actor\":\"user:550e8400-e29b-41d4-a716-000000000002\",\"receipt_id\":\"RE-550e8400-e29b-41d4-a716-446655440020\",\"timestamp\":\"2026-05-01T10:00:00.000Z\",\"type\":\"RE\",\"vault_id\":\"550e8400-e29b-41d4-a716-446655440001\",\"version\":\"DSR/1.0\"}",
+  "canonical_json": "{\"actor\":\"system:re\",\"engagement_id\":\"ENG-test-001\",\"expires_at\":\"2027-08-01T00:00:00.000Z\",\"issued_at\":\"2026-08-01T00:00:00.000Z\",\"permissions\":[\"read_receipts\",\"verify_receipts\"],\"receipt_id\":\"RE-legacy-001\",\"receipts_in_scope\":42,\"recipient_hash\":\"abcdef1234567890abcdef1234567890\",\"revoked_at\":null,\"scope_hash\":\"fedcba0987654321fedcba0987654321\",\"type\":\"RE\",\"vault_id\":\"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\"version\":\"DSR/1.0\"}",
   "_note_on_canonical_hex": "canonical_sha256 is sha256(canonical_json encoded as UTF-8). The signature of a real receipt is SHA-256_hex(canonical_json) — the sha256 here IS the signature for this form.",
-  "canonical_sha256": "7e354554a6fd56fe7dd71f9cf0b01938539890f48268e005447bbd8fd098f40a"
+  "canonical_sha256": "a15bfc93b76a23288a7128640b4671a87ca8a6422e212169d84c7dcdc842434b"
 }
