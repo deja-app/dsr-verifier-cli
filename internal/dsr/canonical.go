@@ -37,12 +37,14 @@ func CanonicalPayload(e *Envelope) (string, error) {
 		// carries highest_candidate_ccs, lookback_days, prs_evaluated, receipt_id.
 		return noAttributionCanonical(e)
 	case e.Type == TypeRV:
-		// c332 · sha256-legacy RV receipts (issued before migration 0278 added
-		// Ed25519 vault signing) use the same 6-field form as otherCanonical.
-		// SigAlgo() treats nil and "" as "sha256-legacy", matching TypeScript's
-		// `receipt.signature_algorithm ?? "sha256-legacy"` (receipt-verifier/index.ts:656–668).
+		// sha256-legacy RV receipts (issued before the Ed25519 cutover at migration 0278)
+		// are signed over the 13-field form: rvManualCanonical without previous_hash.
+		// Neither issuer, in any version, ever signed over the 6-field otherCanonical form —
+		// that was a mis-dispatch in an earlier verifier that was matched by the old vector.
+		// SigAlgo() treats nil and "" as "sha256-legacy" (receipt.signature_algorithm is
+		// plain TEXT nullable on the wire, never backfilled before the cutover).
 		if e.SigAlgo() == AlgoSHA256Legacy {
-			return otherCanonical(e)
+			return rvLegacyCanonical(e)
 		}
 		// Two Ed25519 RV sub-types share the "RV" type string but use different
 		// canonical forms. RVType ("rv-i" / "rv-f") is present only on
@@ -52,12 +54,11 @@ func CanonicalPayload(e *Envelope) (string, error) {
 		}
 		return rvManualCanonical(e)
 	case e.Type == TypeRE:
-		// c332 · sha256-legacy RE receipts use the same 6-field form as otherCanonical,
-		// matching TypeScript receipt-verifier/index.ts:690–702.
-		// Before dbfeaeb, TypeRE had no case and fell through to default:otherCanonical —
-		// dbfeaeb introduced the TypeRE case and silently broke all pre-0278 RE receipts.
+		// sha256-legacy RE receipts are signed over the 13-field form: reCanonical
+		// without prior_hash (which did not exist when these receipts were issued).
+		// The old dispatch to otherCanonical (6 fields) matched no receipt ever issued.
 		if e.SigAlgo() == AlgoSHA256Legacy {
-			return otherCanonical(e)
+			return reLegacyCanonical(e)
 		}
 		// Ed25519 RE receipts use the 14-field form.
 		return reCanonical(e)
@@ -484,6 +485,102 @@ func rvManualCanonical(e *Envelope) (string, error) {
 		"verifier_client":        strDeref(e.VerifierClient, ""),
 		"verifier_identity_hash": strDeref(e.VerifierIdentityHash, ""),
 		"version":                e.DSRVersion,
+	}
+	return jcsSerialise(m)
+}
+
+// rvLegacyCanonical builds the 13-field sha256-legacy canonical form for RV
+// (verification) receipts — identical to rvManualCanonical but without
+// previous_hash, which did not exist when these receipts were signed.
+//
+// Field order (Unicode sort):
+//
+//	actor, engagement_id, invalid_count, issued_at, receipt_id, type, valid_count,
+//	vault_id, verification_result, verified_receipt_count, verifier_client,
+//	verifier_identity_hash, version
+//
+// Mirror of canonicaliseVerificationReceiptLegacy() in
+// packages/api/src/utils/canonical-receipt.ts.
+func rvLegacyCanonical(e *Envelope) (string, error) {
+	var issuedAt string
+	if e.IssuedAt != nil {
+		issuedAt = *e.IssuedAt
+	} else {
+		issuedAt = e.Timestamp
+	}
+	var validCount, invalidCount, verifiedCount int64
+	if e.ValidCount != nil {
+		validCount = *e.ValidCount
+	}
+	if e.InvalidCount != nil {
+		invalidCount = *e.InvalidCount
+	}
+	if e.VerifiedReceiptCount != nil {
+		verifiedCount = *e.VerifiedReceiptCount
+	}
+	m := map[string]any{
+		"actor":                  e.Actor,
+		"engagement_id":          anyNullableStr(e.EngagementID),
+		"invalid_count":          invalidCount,
+		"issued_at":              issuedAt,
+		"receipt_id":             e.ReceiptID,
+		"type":                   e.Type,
+		"valid_count":            validCount,
+		"vault_id":               e.VaultID,
+		"verification_result":    strDeref(e.VerificationResult, ""),
+		"verified_receipt_count": verifiedCount,
+		"verifier_client":        strDeref(e.VerifierClient, ""),
+		"verifier_identity_hash": strDeref(e.VerifierIdentityHash, ""),
+		"version":                e.DSRVersion,
+	}
+	return jcsSerialise(m)
+}
+
+// reLegacyCanonical builds the 13-field sha256-legacy canonical form for RE
+// (engagement) receipts — identical to reCanonical but without prior_hash,
+// which did not exist when these receipts were signed.
+//
+// Field order (Unicode sort):
+//
+//	actor, engagement_id, expires_at, issued_at, permissions, receipt_id,
+//	receipts_in_scope, recipient_hash, revoked_at, scope_hash, type, vault_id, version
+//
+// permissions is sorted before signing, exactly as the issuer did.
+//
+// Mirror of canonicaliseEngagementReceiptLegacy() in
+// packages/api/src/utils/canonical-receipt.ts.
+func reLegacyCanonical(e *Envelope) (string, error) {
+	var issuedAt string
+	if e.IssuedAt != nil {
+		issuedAt = *e.IssuedAt
+	} else {
+		issuedAt = e.Timestamp
+	}
+	var receiptsInScope int64
+	if e.ReceiptsInScope != nil {
+		receiptsInScope = *e.ReceiptsInScope
+	}
+	perms := e.Permissions
+	if perms == nil {
+		perms = []string{}
+	}
+	sorted := make([]string, len(perms))
+	copy(sorted, perms)
+	sort.Strings(sorted)
+	m := map[string]any{
+		"actor":             e.Actor,
+		"engagement_id":     strDeref(e.EngagementID, ""),
+		"expires_at":        strDeref(e.ExpiresAt, ""),
+		"issued_at":         issuedAt,
+		"permissions":       sorted,
+		"receipt_id":        e.ReceiptID,
+		"receipts_in_scope": receiptsInScope,
+		"recipient_hash":    strDeref(e.RecipientHash, ""),
+		"revoked_at":        anyNullableStr(e.RevokedAt),
+		"scope_hash":        strDeref(e.ScopeHash, ""),
+		"type":              e.Type,
+		"vault_id":          e.VaultID,
+		"version":           e.DSRVersion,
 	}
 	return jcsSerialise(m)
 }
