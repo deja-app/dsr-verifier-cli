@@ -192,6 +192,43 @@ func (e *Envelope) FormVersion() string {
 	return *e.CanonicalFormVersion
 }
 
+// UnknownFormVersionError is returned by ValidateFormVersion when the receipt
+// declares a canonical_form_version not recognised by this verifier.
+// Callers may test for this type with errors.As to distinguish it from other
+// CanonicalPayload errors and emit a cannot_verify verdict instead of signature_invalid.
+type UnknownFormVersionError struct {
+	FormVersion string
+}
+
+func (e *UnknownFormVersionError) Error() string {
+	return fmt.Sprintf(
+		"unsupported canonical_form_version %q: this verifier implements "+
+			"v1-legacy, v2-jcs, v3-jcs, v4-jcs, confirmation-rg-v1 — upgrade the verifier to "+
+			"check receipts issued under %q",
+		e.FormVersion, e.FormVersion,
+	)
+}
+
+// IncompleteEnvelopeError is returned by rvLegacyCanonical or reLegacyCanonical
+// when a sha256-legacy receipt is missing required type-specific wire fields.
+// A partial database export that omits type-specific columns produces this error;
+// re-exporting with all fields resolves it.
+// Callers may test for this type with errors.As to emit cannot_verify instead of
+// signature_invalid — the receipt may be intact; the export is at fault.
+type IncompleteEnvelopeError struct {
+	ReceiptType   string
+	MissingFields []string
+}
+
+func (e *IncompleteEnvelopeError) Error() string {
+	return fmt.Sprintf(
+		"sha256-legacy %s receipt is missing required wire fields %v — "+
+			"the export may have omitted type-specific columns; "+
+			"re-export with all fields to verify",
+		e.ReceiptType, e.MissingFields,
+	)
+}
+
 // ValidateFormVersion returns an error when the envelope declares a
 // canonical_form_version this verifier does not implement.
 //
@@ -202,18 +239,15 @@ func (e *Envelope) FormVersion() string {
 // than the issuer and report INVALID — misleading the caller into believing
 // the receipt is tampered rather than simply issued by a newer version of the
 // software. Refusing the form is honest and actionable.
+//
+// Returns *UnknownFormVersionError; callers use errors.As to detect it.
 func (e *Envelope) ValidateFormVersion() error {
 	fv := e.FormVersion()
 	switch fv {
 	case "v1-legacy", "v2-jcs", "v3-jcs", "v4-jcs", "confirmation-rg-v1":
 		return nil
 	default:
-		return fmt.Errorf(
-			"unsupported canonical_form_version %q: this verifier implements "+
-				"v1-legacy, v2-jcs, v3-jcs, v4-jcs, confirmation-rg-v1 — upgrade the verifier to "+
-				"check receipts issued under %q",
-			fv, fv,
-		)
+		return &UnknownFormVersionError{FormVersion: fv}
 	}
 }
 

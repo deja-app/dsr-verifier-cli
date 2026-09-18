@@ -502,6 +502,20 @@ func rvManualCanonical(e *Envelope) (string, error) {
 // Mirror of canonicaliseVerificationReceiptLegacy() in
 // packages/api/src/utils/canonical-receipt.ts.
 func rvLegacyCanonical(e *Envelope) (string, error) {
+	// Guard: verifier_client and verifier_identity_hash are always non-null in
+	// real RV receipts. Nil means the export omitted type-specific columns —
+	// using zero-string defaults would compute bytes the issuer never signed.
+	var missing []string
+	if e.VerifierClient == nil {
+		missing = append(missing, "verifier_client")
+	}
+	if e.VerifierIdentityHash == nil {
+		missing = append(missing, "verifier_identity_hash")
+	}
+	if len(missing) > 0 {
+		return "", &IncompleteEnvelopeError{ReceiptType: "RV", MissingFields: missing}
+	}
+
 	var issuedAt string
 	if e.IssuedAt != nil {
 		issuedAt = *e.IssuedAt
@@ -550,6 +564,20 @@ func rvLegacyCanonical(e *Envelope) (string, error) {
 // Mirror of canonicaliseEngagementReceiptLegacy() in
 // packages/api/src/utils/canonical-receipt.ts.
 func reLegacyCanonical(e *Envelope) (string, error) {
+	// Guard: expires_at and recipient_hash are always non-null in real RE receipts.
+	// Nil means the export omitted type-specific columns — using zero-string defaults
+	// would compute bytes the issuer never signed.
+	var missing []string
+	if e.ExpiresAt == nil {
+		missing = append(missing, "expires_at")
+	}
+	if e.RecipientHash == nil {
+		missing = append(missing, "recipient_hash")
+	}
+	if len(missing) > 0 {
+		return "", &IncompleteEnvelopeError{ReceiptType: "RE", MissingFields: missing}
+	}
+
 	var issuedAt string
 	if e.IssuedAt != nil {
 		issuedAt = *e.IssuedAt

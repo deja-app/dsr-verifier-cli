@@ -56,7 +56,11 @@ func WriteJSON(w io.Writer, r *VerifyResults) error {
 func buildJSONOutput(r *VerifyResults) *JSONOutput {
 	result := "verified"
 	if !r.AllPassed() {
-		result = "failed"
+		if r.IsCannotVerify() {
+			result = "cannot_verify"
+		} else {
+			result = "failed"
+		}
 	}
 
 	out := &JSONOutput{

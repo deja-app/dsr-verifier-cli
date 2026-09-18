@@ -46,6 +46,13 @@ func (r *VerifyResults) AllPassed() bool {
 	return r.Sig != nil && r.Sig.Valid
 }
 
+// IsCannotVerify reports whether the failure is a cannot_verify condition —
+// meaning the verifier could not produce a verdict, not that the receipt failed.
+// This is distinct from signature_invalid: the receipt may be intact.
+func (r *VerifyResults) IsCannotVerify() bool {
+	return r.Sig != nil && r.Sig.Err != nil && r.Sig.Err.Class == dsrerrors.CannotVerify
+}
+
 // FailureCount returns the number of failed checks.
 func (r *VerifyResults) FailureCount() int {
 	count := 0
@@ -90,7 +97,11 @@ func PrintVerifyResults(p *Printer, r *VerifyResults) {
 	p.Println("")
 
 	// Signature check
-	p.CheckLine(r.Sig.Valid, "Signature verification", statusLabel(r.Sig.Valid))
+	sigLabel := statusLabel(r.Sig.Valid)
+	if !r.Sig.Valid && r.Sig.Err != nil && r.Sig.Err.Class == dsrerrors.CannotVerify {
+		sigLabel = "CANNOT VERIFY"
+	}
+	p.CheckLine(r.Sig.Valid, "Signature verification", sigLabel)
 	if r.Sig.Valid {
 		p.Detail("Algorithm", r.Sig.Algorithm)
 		if r.Sig.PublicKeyDigest != "" {
@@ -132,6 +143,28 @@ func PrintVerifyResults(p *Printer, r *VerifyResults) {
 			fmt.Sprintf("  ·  %d check(s) passed", passedChecks))
 		p.Printf("Receipt: %s  ·  %s  ·  %s\n",
 			p.Dim(r.ReceiptID), p.Dim(r.ReceiptType), p.Dim(r.Algorithm))
+	} else if r.IsCannotVerify() {
+		fc := r.FailureCount()
+		p.Println(p.Yellow(p.Bold("Result: CANNOT VERIFY")) +
+			fmt.Sprintf("  ·  %d check(s) cannot be completed  ·  %d passed", fc, passedChecks))
+		p.Println("")
+
+		for _, f := range collectFailures(r) {
+			p.Println(p.Yellow("Cannot verify: ") + string(f.Class))
+			p.Println("")
+			for _, line := range wrapText(f.HumanMessage, lineWidth-2) {
+				p.Indent(line)
+			}
+			p.Println("")
+		}
+
+		p.Println(p.Bold("Recommended actions:"))
+		p.Println("")
+		p.Indent("• Upgrade the verifier to a version that supports this receipt's canonical form, OR")
+		p.Indent("• Re-export the receipt from the vault with all type-specific fields included")
+		p.Indent("• " + p.Yellow("This is not a tampering finding") + " — the verifier cannot produce a verdict with the available data")
+		p.Indent("• Re-run verification after resolving the cause above to obtain a verdict")
+		p.Println("")
 	} else {
 		fc := r.FailureCount()
 		p.Println(p.Red(p.Bold("Result: FAILED")) +

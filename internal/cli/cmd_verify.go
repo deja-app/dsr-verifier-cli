@@ -225,12 +225,18 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 
 	exitCode := exitSuccess
 	if !results.AllPassed() {
-		exitCode = exitVerifyFailed
+		if results.IsCannotVerify() {
+			exitCode = exitCannotVerify
+		} else {
+			exitCode = exitVerifyFailed
+		}
 	}
 
 	logResult := "verified"
-	if exitCode != exitSuccess {
+	if exitCode == exitVerifyFailed {
 		logResult = "failed"
+	} else if exitCode == exitCannotVerify {
+		logResult = "cannot_verify"
 	}
 
 	if !opts.noLog {
@@ -290,4 +296,5 @@ Exit codes:
   2   receipt file is malformed or cannot be parsed
   3   receipt or key file not found
   4   key file is not a valid public key
+  5   cannot verify — unknown canonical form or incomplete export (not a tampering finding)
 `

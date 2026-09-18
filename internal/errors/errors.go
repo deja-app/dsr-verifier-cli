@@ -52,6 +52,21 @@ const (
 	// that may reference this class; it is no longer produced by the single-receipt
 	// verifier (the ExternalDSREnvelope format does not carry a separate content_hash).
 	ContentHashMismatch ErrorClass = "content_hash_mismatch"
+
+	// CannotVerify means the verifier cannot produce a verdict for this receipt.
+	// This is NOT a finding that the receipt is invalid — it means the verifier
+	// lacks the information or implementation needed to check it.
+	//
+	// Common causes:
+	//   - The receipt was issued under a canonical_form_version this verifier
+	//     does not implement (upgrade the verifier).
+	//   - The receipt was exported from a database snapshot that omitted required
+	//     type-specific columns (re-export with all fields).
+	//
+	// Do not treat cannot_verify as evidence of tampering. Resolve the
+	// underlying cause — a newer verifier or a more complete export — and
+	// re-run verification to obtain a verdict.
+	CannotVerify ErrorClass = "cannot_verify"
 )
 
 // VerificationError is a typed, auditor-friendly verification failure.

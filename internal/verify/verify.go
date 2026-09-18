@@ -21,6 +21,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"github.com/deja-app/dsr-verifier-cli/internal/dsr"
@@ -109,12 +110,47 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 	canonical, err := dsr.CanonicalPayload(e)
 	if err != nil {
 		res.Valid = false
-		res.Err = dsrerrors.New(
-			dsrerrors.SignatureInvalid,
-			"The verifier could not construct the canonical signed payload for this receipt. "+
-				"The receipt may be missing required type-specific fields.",
-			fmt.Sprintf("CanonicalPayload error: %s", err.Error()),
-		)
+		// Two "cannot check" conditions — not findings of tampering:
+		//   1. Receipt declares a canonical_form_version this verifier does not implement.
+		//   2. sha256-legacy RV/RE export is missing required type-specific wire fields.
+		// Both surface as errors.As-detectable typed errors from the dsr package.
+		var unknownForm *dsr.UnknownFormVersionError
+		var incompleteEnv *dsr.IncompleteEnvelopeError
+		if errors.As(err, &unknownForm) {
+			res.Err = dsrerrors.New(
+				dsrerrors.CannotVerify,
+				fmt.Sprintf(
+					"The verifier cannot check this receipt. The receipt was issued under "+
+						"canonical_form_version %q, which this version of the verifier does not implement. "+
+						"This is not a finding that the receipt is invalid — the verifier lacks the "+
+						"implementation needed to produce a verdict. Upgrade the verifier to a version "+
+						"that supports this canonical form.",
+					unknownForm.FormVersion,
+				),
+				fmt.Sprintf("canonical_form_version=%q not in {v1-legacy, v2-jcs, v3-jcs, v4-jcs, confirmation-rg-v1}", unknownForm.FormVersion),
+			)
+		} else if errors.As(err, &incompleteEnv) {
+			res.Err = dsrerrors.New(
+				dsrerrors.CannotVerify,
+				fmt.Sprintf(
+					"The verifier cannot check this receipt. The sha256-legacy %s receipt is missing "+
+						"required wire fields (%v) — the export may have omitted type-specific database "+
+						"columns. This is not a finding that the receipt is invalid — the verifier does "+
+						"not have enough data to compute the canonical signed payload. Re-export the "+
+						"receipt with all fields to produce a verdict.",
+					incompleteEnv.ReceiptType,
+					incompleteEnv.MissingFields,
+				),
+				fmt.Sprintf("sha256-legacy %s missing fields: %v", incompleteEnv.ReceiptType, incompleteEnv.MissingFields),
+			)
+		} else {
+			res.Err = dsrerrors.New(
+				dsrerrors.SignatureInvalid,
+				"The verifier could not construct the canonical signed payload for this receipt. "+
+					"The receipt may be missing required type-specific fields.",
+				fmt.Sprintf("CanonicalPayload error: %s", err.Error()),
+			)
+		}
 		return res
 	}
 	res.CanonicalLen = len(canonical)

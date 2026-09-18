@@ -19,6 +19,7 @@ const (
 	exitParseError   = 2 // receipt file is malformed or cannot be parsed
 	exitMissingFile  = 3 // receipt or key file not found
 	exitKeyError     = 4 // key file is not a valid ed25519 public key
+	exitCannotVerify = 5 // verifier cannot produce a verdict (unknown form version or incomplete export)
 )
 
 // Run is the top-level entry point. args is os.Args[1:].
@@ -77,5 +78,6 @@ Exit codes:
   2   parse or format error
   3   missing file (receipt or key)
   4   key error (invalid format)
+  5   cannot verify (unknown canonical form or incomplete export — not a tampering finding)
 
 Run 'dsr-verifier-cli <command> --help' for command-specific help.`
