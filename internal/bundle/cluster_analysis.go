@@ -71,13 +71,13 @@ type ZoneConcentrationResult struct {
 
 // TemporalClusteringResult reports whether anomalies burst within a short window.
 type TemporalClusteringResult struct {
-	Detected          bool      `json:"detected"`
-	WindowStart       time.Time `json:"window_start,omitempty"`
-	WindowEnd         time.Time `json:"window_end,omitempty"`
-	WindowHours       int       `json:"window_hours"` // fixed at ScanWindowHours
-	AnomaliesInWindow int       `json:"anomalies_in_window"`
-	Multiplier        float64   `json:"anomaly_rate_multiplier"`
-	PValueLT          string    `json:"p_value_lt,omitempty"` // "<0.001" when detected
+	Detected          bool       `json:"detected"`
+	WindowStart       *time.Time `json:"window_start,omitempty"`
+	WindowEnd         *time.Time `json:"window_end,omitempty"`
+	WindowHours       int        `json:"window_hours"` // fixed at ScanWindowHours
+	AnomaliesInWindow int        `json:"anomalies_in_window"`
+	Multiplier        float64    `json:"anomaly_rate_multiplier"`
+	PValueLT          string     `json:"p_value_lt,omitempty"` // "<0.001" when detected
 }
 
 // CascadeResult reports whether anomalies in different categories implicate
@@ -537,8 +537,10 @@ func testTemporalClustering(anomalies []Anomaly) TemporalClusteringResult {
 	}
 	if pLT001 {
 		res.Detected = true
-		res.WindowStart = bestStart
-		res.WindowEnd = bestStart.Add(windowEnd)
+		ws := bestStart
+		we := bestStart.Add(windowEnd)
+		res.WindowStart = &ws
+		res.WindowEnd = &we
 		res.PValueLT = "<0.001"
 	}
 	return res
@@ -703,8 +705,13 @@ func ExtractAnomalies(res *BundleVerifyResult, receipts []*ParsedReceipt) []Anom
 				cat = CategorySignatureMismatches
 			case "malformed_receipt":
 				cat = CategoryMissingEntries
+			case "cannot_verify":
+				// The verifier could not produce a verdict for this receipt —
+				// it is not a finding of tampering and does not belong in any
+				// anomaly population (c335 / c348).
+				continue
 			default:
-				continue // skip unknown classes
+				continue // skip unrecognised classes
 			}
 			anomalies = append(anomalies, Anomaly{
 				Category:    cat,

@@ -1,8 +1,11 @@
 package bundle
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
+
+	dsrerrors "github.com/deja-app/dsr-verifier-cli/internal/errors"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -703,5 +706,113 @@ func TestConfidenceScore_PartialPValues(t *testing.T) {
 	// The rationale should NOT mention zone or temporal tests.
 	if contains(res.ConfidenceRationale, "zone") || contains(res.ConfidenceRationale, "temporal") {
 		t.Errorf("partial p-values: rationale incorrectly mentions skipped tests: %q", res.ConfidenceRationale)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// c348: cannot_verify exclusion from anomaly population + zero-time JSON surface
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestExtractAnomalies_CannotVerify_IsExcluded confirms that a receipt whose
+// only error has class "cannot_verify" produces zero anomalies.  The verifier
+// could not check the receipt — it is not a finding of tampering and must never
+// enter the cluster-analysis population.  (c335 / c348)
+func TestExtractAnomalies_CannotVerify_IsExcluded(t *testing.T) {
+	res := &BundleVerifyResult{
+		PerReceipt: PerReceiptResult{
+			Failures: []ReceiptFailure{
+				{
+					ReceiptID: "R1-cannot-verify-001",
+					Errors: []*dsrerrors.VerificationError{
+						{Class: dsrerrors.CannotVerify, HumanMessage: "unknown form version v5-jcs"},
+					},
+				},
+			},
+		},
+	}
+
+	got := ExtractAnomalies(res, nil)
+	if len(got) != 0 {
+		t.Errorf("cannot_verify entry produced %d anomaly(s); want 0 — it must be excluded from the cluster population", len(got))
+	}
+}
+
+// TestExtractAnomalies_CannotVerify_NoSpuriousExclusion confirms that a
+// receipt with class "signature_invalid" DOES produce an anomaly — the explicit
+// cannot_verify case must not accidentally over-exclude real findings.
+func TestExtractAnomalies_CannotVerify_NoSpuriousExclusion(t *testing.T) {
+	res := &BundleVerifyResult{
+		PerReceipt: PerReceiptResult{
+			Failures: []ReceiptFailure{
+				{
+					ReceiptID: "R1-sig-invalid-001",
+					Errors: []*dsrerrors.VerificationError{
+						{Class: dsrerrors.SignatureInvalid, HumanMessage: "signature mismatch"},
+					},
+				},
+			},
+		},
+	}
+
+	got := ExtractAnomalies(res, nil)
+	if len(got) != 1 {
+		t.Errorf("signature_invalid entry produced %d anomaly(s); want 1 — real findings must not be excluded", len(got))
+	}
+	if len(got) == 1 && got[0].Category != CategorySignatureMismatches {
+		t.Errorf("expected CategorySignatureMismatches, got %q", got[0].Category)
+	}
+}
+
+// TestExtractAnomalies_MixedClasses_CannotVerifyFiltered confirms that when
+// a single receipt has both cannot_verify and signature_invalid errors, only
+// the signature_invalid error becomes an anomaly.
+func TestExtractAnomalies_MixedClasses_CannotVerifyFiltered(t *testing.T) {
+	res := &BundleVerifyResult{
+		PerReceipt: PerReceiptResult{
+			Failures: []ReceiptFailure{
+				{
+					ReceiptID: "R1-mixed-001",
+					Errors: []*dsrerrors.VerificationError{
+						{Class: dsrerrors.CannotVerify, HumanMessage: "cannot check this receipt"},
+						{Class: dsrerrors.SignatureInvalid, HumanMessage: "signature mismatch"},
+					},
+				},
+			},
+		},
+	}
+
+	got := ExtractAnomalies(res, nil)
+	if len(got) != 1 {
+		t.Errorf("mixed cannot_verify+signature_invalid receipt produced %d anomaly(s); want 1", len(got))
+	}
+}
+
+// TestTemporalClusteringResult_NoDetected_ZeroTimeAbsentInJSON confirms that
+// when Detected=false, WindowStart and WindowEnd are omitted from JSON rather
+// than appearing as "0001-01-01T00:00:00Z".
+//
+// Go's encoding/json omitempty does NOT suppress a zero time.Time value — it
+// only suppresses nil pointers.  WindowStart and WindowEnd are *time.Time so
+// omitempty works correctly (c348).
+func TestTemporalClusteringResult_NoDetected_ZeroTimeAbsentInJSON(t *testing.T) {
+	toMap := func(r TemporalClusteringResult) map[string]interface{} {
+		b, err := json.Marshal(r)
+		if err != nil {
+			t.Fatalf("json.Marshal: %v", err)
+		}
+		var out map[string]interface{}
+		if err := json.Unmarshal(b, &out); err != nil {
+			t.Fatalf("json.Unmarshal: %v", err)
+		}
+		return out
+	}
+
+	// The zero-value result (Detected=false, no times set).
+	m := toMap(TemporalClusteringResult{WindowHours: ScanWindowHours})
+	if _, ok := m["window_start"]; ok {
+		t.Error("window_start present in JSON when Detected=false — zero time.Time is leaking as \"0001-01-01T00:00:00Z\"")
+	}
+	if _, ok := m["window_end"]; ok {
+		t.Error("window_end present in JSON when Detected=false — zero time.Time is leaking as \"0001-01-01T00:00:00Z\"")
 	}
 }

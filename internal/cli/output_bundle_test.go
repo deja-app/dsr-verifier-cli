@@ -78,8 +78,8 @@ func clusterResultAllDetected() *bundle.ClusterAnalysisResult {
 		},
 		TemporalClustering: bundle.TemporalClusteringResult{
 			Detected:          true,
-			WindowStart:       window,
-			WindowEnd:         window.Add(72 * time.Hour),
+			WindowStart:       func() *time.Time { t := window; return &t }(),
+			WindowEnd:         func() *time.Time { t := window.Add(72 * time.Hour); return &t }(),
 			WindowHours:       72,
 			AnomaliesInWindow: 38,
 			Multiplier:        18.3,
