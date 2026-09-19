@@ -203,7 +203,7 @@ type UnknownFormVersionError struct {
 func (e *UnknownFormVersionError) Error() string {
 	return fmt.Sprintf(
 		"unsupported canonical_form_version %q: this verifier implements "+
-			"v1-legacy, v2-jcs, v3-jcs, v4-jcs, confirmation-rg-v1 — upgrade the verifier to "+
+			"v1-legacy, v2-jcs, v3-jcs, v4-jcs, v5-jcs, confirmation-rg-v1 — upgrade the verifier to "+
 			"check receipts issued under %q",
 		e.FormVersion, e.FormVersion,
 	)
@@ -244,7 +244,7 @@ func (e *IncompleteEnvelopeError) Error() string {
 func (e *Envelope) ValidateFormVersion() error {
 	fv := e.FormVersion()
 	switch fv {
-	case "v1-legacy", "v2-jcs", "v3-jcs", "v4-jcs", "confirmation-rg-v1":
+	case "v1-legacy", "v2-jcs", "v3-jcs", "v4-jcs", "v5-jcs", "confirmation-rg-v1":
 		return nil
 	default:
 		return &UnknownFormVersionError{FormVersion: fv}

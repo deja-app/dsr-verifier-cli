@@ -127,7 +127,7 @@ func Signature(e *dsr.Envelope, provided *PublicKeyWithID) *SignatureResult {
 						"that supports this canonical form.",
 					unknownForm.FormVersion,
 				),
-				fmt.Sprintf("canonical_form_version=%q not in {v1-legacy, v2-jcs, v3-jcs, v4-jcs, confirmation-rg-v1}", unknownForm.FormVersion),
+				fmt.Sprintf("canonical_form_version=%q not in {v1-legacy, v2-jcs, v3-jcs, v4-jcs, v5-jcs, confirmation-rg-v1}", unknownForm.FormVersion),
 			)
 		} else if errors.As(err, &incompleteEnv) {
 			res.Err = dsrerrors.New(

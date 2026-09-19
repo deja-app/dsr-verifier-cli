@@ -334,10 +334,11 @@ type BundleJSONChecks struct {
 }
 
 type BundleJSONPerReceipt struct {
-	Total  int                           `json:"total"`
-	Passed int                           `json:"passed"`
-	Failed int                           `json:"failed"`
-	ByType map[string]*bundle.TypeResult `json:"by_type"`
+	Total        int                           `json:"total"`
+	Passed       int                           `json:"passed"`
+	Failed       int                           `json:"failed"`
+	CannotVerify int                           `json:"cannot_verify"` // §9.6.1 CV-03
+	ByType       map[string]*bundle.TypeResult `json:"by_type"`
 }
 
 type BundleJSONRVCoverage struct {
@@ -379,10 +380,11 @@ func WriteBundleJSONReport(w io.Writer, res *bundle.BundleVerifyResult, duration
 	report.Checks.CausalChain = bundleCheckResult(res.CausalChain.Valid, res.CausalChain.Err)
 
 	report.PerReceipt = BundleJSONPerReceipt{
-		Total:  res.PerReceipt.Total,
-		Passed: res.PerReceipt.Passed,
-		Failed: res.PerReceipt.Failed,
-		ByType: res.PerReceipt.ByType,
+		Total:        res.PerReceipt.Total,
+		Passed:       res.PerReceipt.Passed,
+		Failed:       res.PerReceipt.Failed,
+		CannotVerify: res.PerReceipt.CannotVerify,
+		ByType:       res.PerReceipt.ByType,
 	}
 
 	report.RVCoverage = BundleJSONRVCoverage{

@@ -62,6 +62,8 @@ func CanonicalPayload(e *Envelope) (string, error) {
 		}
 		// Ed25519 RE receipts use the 14-field form.
 		return reCanonical(e)
+	case IsAttributionType(e.Type) && e.FormVersion() == "v5-jcs":
+		return attributionCanonicalV5(e)
 	case IsAttributionType(e.Type):
 		return attributionCanonical(e)
 	case IsResolutionType(e.Type):
@@ -209,6 +211,87 @@ func attributionCanonical(e *Envelope) (string, error) {
 		m["version"] = e.DSRVersion
 	}
 
+	return jcsSerialise(m)
+}
+
+// attributionCanonicalV5 builds the v5-jcs canonical form for R1 attribution
+// receipts. It differs from v1–v4 in two ways:
+//
+//  1. Include-with-null (§3.1): every optional field is always present in the
+//     signed bytes, serialised as JSON null when absent rather than omitted.
+//  2. Universal core (§2): receipt_id, type, canonical_form_version,
+//     organization_id, vault_id, prior_hash, issued_at, actor, signing_key_id,
+//     and signing_algorithm are part of the signed set regardless of receipt type.
+//
+// This function is a byte-exact mirror of canonicaliseReceiptV5() in
+// packages/api/src/utils/canonical-receipt.ts. Any divergence from the
+// TypeScript output is a cross-implementation bug.
+//
+// Pinned conformance vector: 774 chars, SHA-256
+// fcc93d66c32f432d7bbede9ba5cfb9c661d9ef04781bfcc4e27fee26524459d6
+// (all optional fields null, required fields as in §3.3 test fixture).
+func attributionCanonicalV5(e *Envelope) (string, error) {
+	if e.Repository == nil {
+		return "", fmt.Errorf("v5-jcs attribution receipt missing repository")
+	}
+	if e.PRNumber == nil {
+		return "", fmt.Errorf("v5-jcs attribution receipt missing pr_number")
+	}
+
+	// issued_at: explicit field → Timestamp fallback → null.
+	var issuedAt any
+	if e.IssuedAt != nil {
+		issuedAt = *e.IssuedAt
+	} else if e.Timestamp != "" {
+		issuedAt = e.Timestamp
+	}
+
+	// actor: non-empty string → string; empty → null.
+	var actor any
+	if e.Actor != "" {
+		actor = e.Actor
+	}
+
+	// version: non-empty → string; empty → null.
+	var version any
+	if e.DSRVersion != "" {
+		version = e.DSRVersion
+	}
+
+	m := map[string]any{
+		// Universal core — always present, null where absent (§3.1)
+		"actor":                  actor,
+		"canonical_form_version": "v5-jcs",
+		"issued_at":              issuedAt,
+		"organization_id":        e.OrganizationID,
+		"prior_hash":             anyNullableStr(e.PriorHash),
+		"receipt_id":             e.ReceiptID,
+		"signing_algorithm":      anyNullableStr(e.SignatureAlgorithm),
+		"signing_key_id":         anyNullableStr(e.SigningKeyID),
+		"type":                   e.Type,
+		"vault_id":               e.VaultID,
+		"version":                version,
+		// R1-specific — include-with-null for optional fields
+		"anchoring_basis":        anyNullableStr(e.AnchoringBasis),
+		"attribution_margin":     anyNullableStr(e.AttributionMargin),
+		"ccs_score":              strDeref(e.CCSScore, "0.0000"),
+		"confidence":             strDeref(e.Confidence, ""),
+		"error_class":            anyNullableStr(e.ErrorClass),
+		"incident_id":            anyNullableStr(e.IncidentID),
+		"is_internal_validation": anyNullableBool(e.IsInternalValidation),
+		"is_synthetic":           anyNullableBool(e.IsSynthetic),
+		"is_trial":               anyNullableBool(e.IsTrial),
+		"matched":                strDeref(e.Matched, "false"),
+		"missing_field":          anyNullableStr(e.MissingField),
+		"pr_number":              *e.PRNumber,
+		"producer_graph_score":   anyNullableStr(e.ProducerGraphScore),
+		"repository":             *e.Repository,
+		"schema_stability_score": anyNullableStr(e.SchemaStabilityScore),
+		"scoring_version":        anyNullableStr(e.ScoringVersion),
+		"service_zone":           strDeref(e.ServiceZone, ""),
+		"signal_observation_hash": anyNullableStr(e.SignalObservationHash),
+		"temporal_basis":         anyNullableStr(e.TemporalBasis),
+	}
 	return jcsSerialise(m)
 }
 
@@ -899,6 +982,13 @@ func anyNullableStr(p *string) any {
 func boolDeref(p *bool, def bool) bool {
 	if p == nil {
 		return def
+	}
+	return *p
+}
+
+func anyNullableBool(p *bool) any {
+	if p == nil {
+		return nil
 	}
 	return *p
 }

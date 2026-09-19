@@ -5,7 +5,7 @@ package verify_test
 // The verifier must emit cannot_verify (not signature_invalid) when it lacks
 // the information or implementation needed to produce a verdict.  Three cases:
 //
-//  1. Unknown canonical_form_version (e.g. "v5") — the verifier does not know
+//  1. Unknown canonical_form_version (e.g. "v99-jcs") — the verifier does not know
 //     how to compute the canonical bytes; silently computing wrong bytes and
 //     reporting INVALID would accuse the receipt of tampering.
 //
@@ -60,7 +60,7 @@ func assertSignatureInvalidOrOK(t *testing.T, label string, res *verify.Signatur
 // form version this verifier does not implement emits cannot_verify (not
 // signature_invalid, which would wrongly accuse the receipt of tampering).
 func TestCannotVerify_UnknownFormVersion(t *testing.T) {
-	unknown := "v5-jcs"
+	unknown := "v99-jcs"
 	res := verify.Signature(&dsr.Envelope{
 		Type:                 "R1",
 		ReceiptID:            "R1-cv-test-001",
@@ -71,7 +71,7 @@ func TestCannotVerify_UnknownFormVersion(t *testing.T) {
 		CanonicalFormVersion: &unknown,
 	}, nil)
 
-	assertCannotVerify(t, "unknown form version v5-jcs", res)
+	assertCannotVerify(t, "unknown form version v99-jcs", res)
 
 	// Human message must say "cannot check" not "failed"
 	if res.Err != nil && len(res.Err.HumanMessage) < 10 {
@@ -82,7 +82,7 @@ func TestCannotVerify_UnknownFormVersion(t *testing.T) {
 // TestCannotVerify_KnownFormVersion_NoSpuriousFire ensures the guard does NOT
 // fire on receipts with known form versions — negative case for the tripwire.
 func TestCannotVerify_KnownFormVersion_NoSpuriousFire(t *testing.T) {
-	for _, fv := range []string{"v1-legacy", "v2-jcs", "v3-jcs", "v4-jcs"} {
+	for _, fv := range []string{"v1-legacy", "v2-jcs", "v3-jcs", "v4-jcs", "v5-jcs"} {
 		fvCopy := fv
 		t.Run(fv, func(t *testing.T) {
 			res := verify.Signature(&dsr.Envelope{

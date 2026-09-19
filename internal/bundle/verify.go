@@ -40,10 +40,13 @@ type BundleVerifyResult struct {
 }
 
 // AllPassed reports whether all bundle-level checks passed.
+// A bundle with cannot_verify receipts does not pass — the verifier cannot
+// confirm those receipts are valid, so the bundle is not fully verified.
 func (r *BundleVerifyResult) AllPassed() bool {
 	return r.ManifestSig.Valid &&
 		r.SequenceInteg.Valid &&
 		r.PerReceipt.Failed == 0 &&
+		r.PerReceipt.CannotVerify == 0 &&
 		r.CausalChain.Valid
 }
 
@@ -94,18 +97,20 @@ type SeqIntegResult struct {
 
 // PerReceiptResult aggregates per-receipt verification across the bundle.
 type PerReceiptResult struct {
-	Total    int
-	Passed   int
-	Failed   int
-	ByType   map[string]*TypeResult
-	Failures []ReceiptFailure
+	Total        int
+	Passed       int
+	Failed       int
+	CannotVerify int // receipts where the verifier cannot produce a verdict (§9.6.1 CV-03)
+	ByType       map[string]*TypeResult
+	Failures     []ReceiptFailure
 }
 
-// TypeResult counts passed/failed within one receipt type.
+// TypeResult counts passed/failed/cannot_verify within one receipt type.
 type TypeResult struct {
-	Total  int
-	Passed int
-	Failed int
+	Total        int
+	Passed       int
+	Failed       int
+	CannotVerify int
 }
 
 // ReceiptFailure holds the failure details for one receipt.
@@ -341,8 +346,24 @@ func VerifyPerReceipt(receipts []*ParsedReceipt, provided *verify.PublicKeyWithI
 		}
 
 		if len(errs) > 0 {
-			res.ByType[typ].Failed++
-			res.Failed++
+			// §9.6.1 CV-03: cannot_verify is distinct from failed.
+			// A receipt where the verifier cannot produce a verdict (e.g. unknown
+			// key algorithm, missing public key) must not aggregate silently as
+			// either failed or verified — it gets its own counter.
+			isCannotVerify := false
+			for _, e := range errs {
+				if e.Class == dsrerrors.CannotVerify {
+					isCannotVerify = true
+					break
+				}
+			}
+			if isCannotVerify {
+				res.ByType[typ].CannotVerify++
+				res.CannotVerify++
+			} else {
+				res.ByType[typ].Failed++
+				res.Failed++
+			}
 			res.Failures = append(res.Failures, ReceiptFailure{
 				Seq:       pr.Entry.Seq,
 				ReceiptID: pr.Receipt.ReceiptID,
