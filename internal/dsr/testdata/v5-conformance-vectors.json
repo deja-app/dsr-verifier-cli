@@ -1,0 +1,191 @@
+{
+   "_comment": "DSR v5 §3.3 conformance vectors — one receipt of each type with every optional field ABSENT (literal null). The expected_canonical strings were TYPED BY HAND from spec §1 (core) and §7.1 (per-type field sets) in JCS key order, 18 Sep 2026, c337. expected_length and expected_sha256 are derived from those strings by a tool (wc -c, sha256sum), never from an implementation. Both implementations — packages/api canonical-receipt.ts and dsr-verifier-cli — read this file. An implementation that zero-fills, omits a null key, or drops the bound form version produces different bytes on every vector here by construction. To change a vector: re-derive it from the spec by hand, then check the implementation against it. Never paste an implementation's output in.",
+   "form_version": "v5-jcs",
+   "core": {
+      "receipt_id": "00000000-0000-4000-8000-0000000000c5",
+      "version": "DSR/1.0.6",
+      "organization_id": "00000000-0000-4000-8000-0000000000a1",
+      "vault_id": null,
+      "issued_at": "2026-09-18T00:00:00.000Z",
+      "actor": null,
+      "prior_hash": "6a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab5be0cd19",
+      "signing_key_id": "00000000-0000-4000-8000-0000000000e2",
+      "signature_algorithm": "ed25519-v1"
+   },
+   "vectors": [
+      {
+         "type": "R1",
+         "fields": {
+            "ccs_score": "0.812",
+            "confidence": "high",
+            "error_class": null,
+            "matched": "true",
+            "missing_field": null,
+            "pr_number": 41,
+            "repository": "acme/repo",
+            "service_zone": "checkout-service",
+            "scoring_version": "ccs-v3",
+            "producer_graph_score": null,
+            "schema_stability_score": null,
+            "is_synthetic": null,
+            "is_internal_validation": null,
+            "is_trial": null,
+            "temporal_basis": null,
+            "anchoring_basis": null,
+            "incident_id": null,
+            "signal_observation_hash": null,
+            "attribution_margin": null
+         },
+         "expected_canonical": "{\"actor\":null,\"anchoring_basis\":null,\"attribution_margin\":null,\"canonical_form_version\":\"v5-jcs\",\"ccs_score\":\"0.812\",\"confidence\":\"high\",\"error_class\":null,\"incident_id\":null,\"is_internal_validation\":null,\"is_synthetic\":null,\"is_trial\":null,\"issued_at\":\"2026-09-18T00:00:00.000Z\",\"matched\":\"true\",\"missing_field\":null,\"organization_id\":\"00000000-0000-4000-8000-0000000000a1\",\"pr_number\":41,\"prior_hash\":\"6a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab5be0cd19\",\"producer_graph_score\":null,\"receipt_id\":\"00000000-0000-4000-8000-0000000000c5\",\"repository\":\"acme/repo\",\"schema_stability_score\":null,\"scoring_version\":\"ccs-v3\",\"service_zone\":\"checkout-service\",\"signal_observation_hash\":null,\"signature_algorithm\":\"ed25519-v1\",\"signing_key_id\":\"00000000-0000-4000-8000-0000000000e2\",\"temporal_basis\":null,\"type\":\"R1\",\"vault_id\":null,\"version\":\"DSR/1.0.6\"}",
+         "expected_length": 860,
+         "expected_sha256": "a580e86b34e703a8baf000f86c39a4ab2a0464f933c8cf7ade67925e8c2c8092"
+      },
+      {
+         "type": "R2",
+         "fields": {
+            "attribution_receipt_id": "00000000-0000-4000-8000-0000000000c1",
+            "dsr_fix_code": null,
+            "duration_gate_score": "1.000",
+            "feature_gate_score": "1.000",
+            "file_gate_score": "0.900",
+            "gate_evaluated_at": "2026-09-18T00:05:00.000Z",
+            "gates_passed": true,
+            "incident_id": "00000000-0000-4000-8000-0000000000d1",
+            "infra_gate_score": "1.000",
+            "rate_gate_score": "1.000",
+            "resolved_at": "2026-09-18T00:04:00.000Z",
+            "service_zone": "checkout-service",
+            "temporal_basis": null,
+            "time_to_resolution_ms": 240000
+         },
+         "expected_canonical": "{\"actor\":null,\"attribution_receipt_id\":\"00000000-0000-4000-8000-0000000000c1\",\"canonical_form_version\":\"v5-jcs\",\"dsr_fix_code\":null,\"duration_gate_score\":\"1.000\",\"feature_gate_score\":\"1.000\",\"file_gate_score\":\"0.900\",\"gate_evaluated_at\":\"2026-09-18T00:05:00.000Z\",\"gates_passed\":true,\"incident_id\":\"00000000-0000-4000-8000-0000000000d1\",\"infra_gate_score\":\"1.000\",\"issued_at\":\"2026-09-18T00:00:00.000Z\",\"organization_id\":\"00000000-0000-4000-8000-0000000000a1\",\"prior_hash\":\"6a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab5be0cd19\",\"rate_gate_score\":\"1.000\",\"receipt_id\":\"00000000-0000-4000-8000-0000000000c5\",\"resolved_at\":\"2026-09-18T00:04:00.000Z\",\"service_zone\":\"checkout-service\",\"signature_algorithm\":\"ed25519-v1\",\"signing_key_id\":\"00000000-0000-4000-8000-0000000000e2\",\"temporal_basis\":null,\"time_to_resolution_ms\":240000,\"type\":\"R2\",\"vault_id\":null,\"version\":\"DSR/1.0.6\"}",
+         "expected_length": 887,
+         "expected_sha256": "db25baf391a0a67e6d4fb231360d3636c89d0b7be8ad269719b37bc41cda86d6"
+      },
+      {
+         "type": "R1-L",
+         "fields": {
+            "candidate_count": 3,
+            "highest_ccs": "0.412",
+            "incident_id": null,
+            "service_zone": "checkout-service",
+            "scoring_version": "ccs-v3",
+            "is_synthetic": null,
+            "attribution_margin": null,
+            "signal_observation_hash": null
+         },
+         "expected_canonical": "{\"actor\":null,\"attribution_margin\":null,\"candidate_count\":3,\"canonical_form_version\":\"v5-jcs\",\"highest_ccs\":\"0.412\",\"incident_id\":null,\"is_synthetic\":null,\"issued_at\":\"2026-09-18T00:00:00.000Z\",\"organization_id\":\"00000000-0000-4000-8000-0000000000a1\",\"prior_hash\":\"6a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab5be0cd19\",\"receipt_id\":\"00000000-0000-4000-8000-0000000000c5\",\"scoring_version\":\"ccs-v3\",\"service_zone\":\"checkout-service\",\"signal_observation_hash\":null,\"signature_algorithm\":\"ed25519-v1\",\"signing_key_id\":\"00000000-0000-4000-8000-0000000000e2\",\"type\":\"R1-L\",\"vault_id\":null,\"version\":\"DSR/1.0.6\"}",
+         "expected_length": 618,
+         "expected_sha256": "97f6e57da3d19bb36e915c10cf60317e3c8dfd158f52ad77bacfff00ba884917"
+      },
+      {
+         "type": "R1-N",
+         "fields": {
+            "highest_candidate_ccs": "0.210",
+            "incident_id": null,
+            "lookback_days": 30,
+            "prs_evaluated": 12,
+            "service_zone": "checkout-service",
+            "scoring_version": "ccs-v3",
+            "is_synthetic": null,
+            "signal_observation_hash": null
+         },
+         "expected_canonical": "{\"actor\":null,\"canonical_form_version\":\"v5-jcs\",\"highest_candidate_ccs\":\"0.210\",\"incident_id\":null,\"is_synthetic\":null,\"issued_at\":\"2026-09-18T00:00:00.000Z\",\"lookback_days\":30,\"organization_id\":\"00000000-0000-4000-8000-0000000000a1\",\"prior_hash\":\"6a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab5be0cd19\",\"prs_evaluated\":12,\"receipt_id\":\"00000000-0000-4000-8000-0000000000c5\",\"scoring_version\":\"ccs-v3\",\"service_zone\":\"checkout-service\",\"signal_observation_hash\":null,\"signature_algorithm\":\"ed25519-v1\",\"signing_key_id\":\"00000000-0000-4000-8000-0000000000e2\",\"type\":\"R1-N\",\"vault_id\":null,\"version\":\"DSR/1.0.6\"}",
+         "expected_length": 620,
+         "expected_sha256": "4b6de10be0ecdd104c39676b77d958f469cee6678b3fff086b964e0e57c73ec2"
+      },
+      {
+         "type": "R0",
+         "fields": {
+            "incident_id": null,
+            "raw_signal_hash": "b916fdaf449299c8ac61b916fdaf449299c8ac61b916fdaf449299c8ac61b916",
+            "source_integration": "sentry"
+         },
+         "expected_canonical": "{\"actor\":null,\"canonical_form_version\":\"v5-jcs\",\"incident_id\":null,\"issued_at\":\"2026-09-18T00:00:00.000Z\",\"organization_id\":\"00000000-0000-4000-8000-0000000000a1\",\"prior_hash\":\"6a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab5be0cd19\",\"raw_signal_hash\":\"b916fdaf449299c8ac61b916fdaf449299c8ac61b916fdaf449299c8ac61b916\",\"receipt_id\":\"00000000-0000-4000-8000-0000000000c5\",\"signature_algorithm\":\"ed25519-v1\",\"signing_key_id\":\"00000000-0000-4000-8000-0000000000e2\",\"source_integration\":\"sentry\",\"type\":\"R0\",\"vault_id\":null,\"version\":\"DSR/1.0.6\"}",
+         "expected_length": 551,
+         "expected_sha256": "52fedae8992e5dff11df7f988960c344c65ffe2dd0992e23e51aa46110359f24"
+      },
+      {
+         "type": "R2-R",
+         "fields": {
+            "days_since_r2": 4,
+            "fingerprint_match": "exact",
+            "incident_id": "00000000-0000-4000-8000-0000000000d1",
+            "new_r1": "00000000-0000-4000-8000-0000000000c7",
+            "original_r1": "00000000-0000-4000-8000-0000000000c1",
+            "original_r2": "00000000-0000-4000-8000-0000000000c2",
+            "sde_fingerprint": "fp-abc123",
+            "service_zone": "checkout-service"
+         },
+         "expected_canonical": "{\"actor\":null,\"canonical_form_version\":\"v5-jcs\",\"days_since_r2\":4,\"fingerprint_match\":\"exact\",\"incident_id\":\"00000000-0000-4000-8000-0000000000d1\",\"issued_at\":\"2026-09-18T00:00:00.000Z\",\"new_r1\":\"00000000-0000-4000-8000-0000000000c7\",\"organization_id\":\"00000000-0000-4000-8000-0000000000a1\",\"original_r1\":\"00000000-0000-4000-8000-0000000000c1\",\"original_r2\":\"00000000-0000-4000-8000-0000000000c2\",\"prior_hash\":\"6a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab5be0cd19\",\"receipt_id\":\"00000000-0000-4000-8000-0000000000c5\",\"sde_fingerprint\":\"fp-abc123\",\"service_zone\":\"checkout-service\",\"signature_algorithm\":\"ed25519-v1\",\"signing_key_id\":\"00000000-0000-4000-8000-0000000000e2\",\"type\":\"R2-R\",\"vault_id\":null,\"version\":\"DSR/1.0.6\"}",
+         "expected_length": 736,
+         "expected_sha256": "b2f7b61639bd74e392936fdb7d22a11891b68e3831d6a01123069e854333d6c5"
+      },
+      {
+         "type": "R2-F",
+         "fields": {
+            "attempted_pr": "acme/repo#52",
+            "chained_from": "00000000-0000-4000-8000-0000000000c1",
+            "gates_failed": 2,
+            "incident_id": "00000000-0000-4000-8000-0000000000d1",
+            "regression_detected": false,
+            "service_zone": "checkout-service"
+         },
+         "expected_canonical": "{\"actor\":null,\"attempted_pr\":\"acme/repo#52\",\"canonical_form_version\":\"v5-jcs\",\"chained_from\":\"00000000-0000-4000-8000-0000000000c1\",\"gates_failed\":2,\"incident_id\":\"00000000-0000-4000-8000-0000000000d1\",\"issued_at\":\"2026-09-18T00:00:00.000Z\",\"organization_id\":\"00000000-0000-4000-8000-0000000000a1\",\"prior_hash\":\"6a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab5be0cd19\",\"receipt_id\":\"00000000-0000-4000-8000-0000000000c5\",\"regression_detected\":false,\"service_zone\":\"checkout-service\",\"signature_algorithm\":\"ed25519-v1\",\"signing_key_id\":\"00000000-0000-4000-8000-0000000000e2\",\"type\":\"R2-F\",\"vault_id\":null,\"version\":\"DSR/1.0.6\"}",
+         "expected_length": 635,
+         "expected_sha256": "8cf8a5408388752339c13c0dada14c26be866253dd02c44c0e721b87d74b47ac"
+      },
+      {
+         "type": "RV",
+         "fields": {
+            "engagement_id": null,
+            "invalid_count": 0,
+            "valid_count": 8,
+            "verification_result": "pass",
+            "verified_receipt_count": 8,
+            "verifier_client": "dsr-verifier-cli/1.6.10",
+            "verifier_identity_hash": "c1f83d9ab5be0cd196a09e667bb67ae853c6ef372a54ff53a510e527f9b05688"
+         },
+         "expected_canonical": "{\"actor\":null,\"canonical_form_version\":\"v5-jcs\",\"engagement_id\":null,\"invalid_count\":0,\"issued_at\":\"2026-09-18T00:00:00.000Z\",\"organization_id\":\"00000000-0000-4000-8000-0000000000a1\",\"prior_hash\":\"6a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab5be0cd19\",\"receipt_id\":\"00000000-0000-4000-8000-0000000000c5\",\"signature_algorithm\":\"ed25519-v1\",\"signing_key_id\":\"00000000-0000-4000-8000-0000000000e2\",\"type\":\"RV\",\"valid_count\":8,\"vault_id\":null,\"verification_result\":\"pass\",\"verified_receipt_count\":8,\"verifier_client\":\"dsr-verifier-cli/1.6.10\",\"verifier_identity_hash\":\"c1f83d9ab5be0cd196a09e667bb67ae853c6ef372a54ff53a510e527f9b05688\",\"version\":\"DSR/1.0.6\"}",
+         "expected_length": 664,
+         "expected_sha256": "b1f8f13e800150e14fc79a47d82b71ea88369fd8614a91b4df3dcc7f1ef34dfa"
+      },
+      {
+         "type": "RE",
+         "fields": {
+            "engagement_id": "00000000-0000-4000-8000-0000000000e9",
+            "expires_at": "2026-12-18T00:00:00.000Z",
+            "permissions": ["receipts.read"],
+            "receipts_in_scope": 8,
+            "recipient_hash": "5be0cd196a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab",
+            "revoked_at": null,
+            "scope_hash": "9b05688c1f83d9ab5be0cd196a09e667bb67ae853c6ef372a54ff53a510e527f"
+         },
+         "expected_canonical": "{\"actor\":null,\"canonical_form_version\":\"v5-jcs\",\"engagement_id\":\"00000000-0000-4000-8000-0000000000e9\",\"expires_at\":\"2026-12-18T00:00:00.000Z\",\"issued_at\":\"2026-09-18T00:00:00.000Z\",\"organization_id\":\"00000000-0000-4000-8000-0000000000a1\",\"permissions\":[\"receipts.read\"],\"prior_hash\":\"6a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab5be0cd19\",\"receipt_id\":\"00000000-0000-4000-8000-0000000000c5\",\"receipts_in_scope\":8,\"recipient_hash\":\"5be0cd196a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab\",\"revoked_at\":null,\"scope_hash\":\"9b05688c1f83d9ab5be0cd196a09e667bb67ae853c6ef372a54ff53a510e527f\",\"signature_algorithm\":\"ed25519-v1\",\"signing_key_id\":\"00000000-0000-4000-8000-0000000000e2\",\"type\":\"RE\",\"vault_id\":null,\"version\":\"DSR/1.0.6\"}",
+         "expected_length": 748,
+         "expected_sha256": "dd2f04b02903e4a1f01c6fb4c399deab7e53ccc18e641f8f5e17a6811d857636"
+      },
+      {
+         "type": "RG",
+         "fields": {
+            "change_type": "genesis_zones_locked",
+            "new_state_hash": "f83d9ab5be0cd196a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1",
+            "prior_state_hash": "d9ab5be0cd196a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83"
+         },
+         "expected_canonical": "{\"actor\":null,\"canonical_form_version\":\"v5-jcs\",\"change_type\":\"genesis_zones_locked\",\"issued_at\":\"2026-09-18T00:00:00.000Z\",\"new_state_hash\":\"f83d9ab5be0cd196a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1\",\"organization_id\":\"00000000-0000-4000-8000-0000000000a1\",\"prior_hash\":\"6a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab5be0cd19\",\"prior_state_hash\":\"d9ab5be0cd196a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83\",\"receipt_id\":\"00000000-0000-4000-8000-0000000000c5\",\"signature_algorithm\":\"ed25519-v1\",\"signing_key_id\":\"00000000-0000-4000-8000-0000000000e2\",\"type\":\"RG\",\"vault_id\":null,\"version\":\"DSR/1.0.6\"}",
+         "expected_length": 624,
+         "expected_sha256": "cba45798470652cf7380baae33774c07f56442d7fa2bc870ced01184fb9eb121"
+      },
+      {
+         "type": "confirmation-RG",
+         "envelope_type": "RG",
+         "fields": {
+            "change_type": "R1L_CONFIRMED",
+            "confirmed_receipt_id": "00000000-0000-4000-8000-0000000000c3"
+         },
+         "expected_canonical": "{\"actor\":null,\"canonical_form_version\":\"v5-jcs\",\"change_type\":\"R1L_CONFIRMED\",\"confirmed_receipt_id\":\"00000000-0000-4000-8000-0000000000c3\",\"issued_at\":\"2026-09-18T00:00:00.000Z\",\"organization_id\":\"00000000-0000-4000-8000-0000000000a1\",\"prior_hash\":\"6a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab5be0cd19\",\"receipt_id\":\"00000000-0000-4000-8000-0000000000c5\",\"signature_algorithm\":\"ed25519-v1\",\"signing_key_id\":\"00000000-0000-4000-8000-0000000000e2\",\"type\":\"RG\",\"vault_id\":null,\"version\":\"DSR/1.0.6\"}",
+         "expected_length": 509,
+         "expected_sha256": "2bae2dbf9a6e71d3964c315865b1ab539323cdb02c80725e71bb6b1788c1b45b"
+      }
+   ]
+}

@@ -27,6 +27,11 @@ func CanonicalPayload(e *Envelope) (string, error) {
 	if err := e.ValidateFormVersion(); err != nil {
 		return "", err
 	}
+	// v5-jcs uses a unified dispatch for all receipt types — every type gets a
+	// universal core plus type-specific fields, all include-with-null for optionals.
+	if e.FormVersion() == "v5-jcs" {
+		return v5Dispatch(e)
+	}
 	switch {
 	case e.Type == TypeR1L:
 		// R1-L has a distinct canonical form from R1: candidate_count, highest_ccs,
@@ -62,8 +67,6 @@ func CanonicalPayload(e *Envelope) (string, error) {
 		}
 		// Ed25519 RE receipts use the 14-field form.
 		return reCanonical(e)
-	case IsAttributionType(e.Type) && e.FormVersion() == "v5-jcs":
-		return attributionCanonicalV5(e)
 	case IsAttributionType(e.Type):
 		return attributionCanonical(e)
 	case IsResolutionType(e.Type):
@@ -214,84 +217,331 @@ func attributionCanonical(e *Envelope) (string, error) {
 	return jcsSerialise(m)
 }
 
-// attributionCanonicalV5 builds the v5-jcs canonical form for R1 attribution
-// receipts. It differs from v1–v4 in two ways:
-//
-//  1. Include-with-null (§3.1): every optional field is always present in the
-//     signed bytes, serialised as JSON null when absent rather than omitted.
-//  2. Universal core (§2): receipt_id, type, canonical_form_version,
-//     organization_id, vault_id, prior_hash, issued_at, actor, signing_key_id,
-//     and signing_algorithm are part of the signed set regardless of receipt type.
-//
-// This function is a byte-exact mirror of canonicaliseReceiptV5() in
-// packages/api/src/utils/canonical-receipt.ts. Any divergence from the
-// TypeScript output is a cross-implementation bug.
-//
-// Pinned conformance vector: 774 chars, SHA-256
-// fcc93d66c32f432d7bbede9ba5cfb9c661d9ef04781bfcc4e27fee26524459d6
-// (all optional fields null, required fields as in §3.3 test fixture).
-func attributionCanonicalV5(e *Envelope) (string, error) {
-	if e.Repository == nil {
-		return "", fmt.Errorf("v5-jcs attribution receipt missing repository")
-	}
-	if e.PRNumber == nil {
-		return "", fmt.Errorf("v5-jcs attribution receipt missing pr_number")
-	}
-
-	// issued_at: explicit field → Timestamp fallback → null.
+// v5Core returns the 11-field universal core map for a v5-jcs receipt (§2).
+// All fields are always present; absent optional ones serialise as JSON null.
+// Callers add type-specific fields to the returned map before passing to jcsSerialise.
+func v5Core(e *Envelope) map[string]any {
 	var issuedAt any
 	if e.IssuedAt != nil {
 		issuedAt = *e.IssuedAt
 	} else if e.Timestamp != "" {
 		issuedAt = e.Timestamp
 	}
-
-	// actor: non-empty string → string; empty → null.
 	var actor any
 	if e.Actor != "" {
 		actor = e.Actor
 	}
-
-	// version: non-empty → string; empty → null.
 	var version any
 	if e.DSRVersion != "" {
 		version = e.DSRVersion
 	}
-
-	m := map[string]any{
-		// Universal core — always present, null where absent (§3.1)
+	var vaultID any
+	if e.VaultID != "" {
+		vaultID = e.VaultID
+	}
+	return map[string]any{
 		"actor":                  actor,
 		"canonical_form_version": "v5-jcs",
 		"issued_at":              issuedAt,
 		"organization_id":        e.OrganizationID,
 		"prior_hash":             anyNullableStr(e.PriorHash),
 		"receipt_id":             e.ReceiptID,
-		"signing_algorithm":      anyNullableStr(e.SignatureAlgorithm),
+		"signature_algorithm":    anyNullableStr(e.SignatureAlgorithm),
 		"signing_key_id":         anyNullableStr(e.SigningKeyID),
 		"type":                   e.Type,
-		"vault_id":               e.VaultID,
+		"vault_id":               vaultID,
 		"version":                version,
-		// R1-specific — include-with-null for optional fields
-		"anchoring_basis":        anyNullableStr(e.AnchoringBasis),
-		"attribution_margin":     anyNullableStr(e.AttributionMargin),
-		"ccs_score":              strDeref(e.CCSScore, "0.0000"),
-		"confidence":             strDeref(e.Confidence, ""),
-		"error_class":            anyNullableStr(e.ErrorClass),
-		"incident_id":            anyNullableStr(e.IncidentID),
-		"is_internal_validation": anyNullableBool(e.IsInternalValidation),
-		"is_synthetic":           anyNullableBool(e.IsSynthetic),
-		"is_trial":               anyNullableBool(e.IsTrial),
-		"matched":                strDeref(e.Matched, "false"),
-		"missing_field":          anyNullableStr(e.MissingField),
-		"pr_number":              *e.PRNumber,
-		"producer_graph_score":   anyNullableStr(e.ProducerGraphScore),
-		"repository":             *e.Repository,
-		"schema_stability_score": anyNullableStr(e.SchemaStabilityScore),
-		"scoring_version":        anyNullableStr(e.ScoringVersion),
-		"service_zone":           strDeref(e.ServiceZone, ""),
-		"signal_observation_hash": anyNullableStr(e.SignalObservationHash),
-		"temporal_basis":         anyNullableStr(e.TemporalBasis),
 	}
+}
+
+// v5Dispatch routes a v5-jcs envelope to its type-specific canonical function.
+func v5Dispatch(e *Envelope) (string, error) {
+	switch e.Type {
+	case TypeR1:
+		return r1CanonicalV5(e)
+	case TypeR1L:
+		return r1lCanonicalV5(e)
+	case TypeR1N:
+		return r1nCanonicalV5(e)
+	case TypeR0:
+		return r0CanonicalV5(e)
+	case TypeR2:
+		return r2CanonicalV5(e)
+	case TypeR2R:
+		return r2rCanonicalV5(e)
+	case TypeR2F:
+		return r2fCanonicalV5(e)
+	case TypeRV:
+		return rvCanonicalV5(e)
+	case TypeRE:
+		return reCanonicalV5(e)
+	case TypeRG:
+		if e.ConfirmedReceiptID != nil {
+			return confirmationGovernanceCanonicalV5(e)
+		}
+		return governanceCanonicalV5(e)
+	default:
+		return "", fmt.Errorf("v5-jcs: unsupported receipt type %q", e.Type)
+	}
+}
+
+// r1CanonicalV5 builds the v5-jcs canonical form for R1 attribution receipts.
+// Mirror of canonicaliseReceiptV5() in packages/api/src/utils/canonical-receipt.ts.
+func r1CanonicalV5(e *Envelope) (string, error) {
+	if e.Repository == nil {
+		return "", fmt.Errorf("v5-jcs R1 receipt missing repository")
+	}
+	if e.PRNumber == nil {
+		return "", fmt.Errorf("v5-jcs R1 receipt missing pr_number")
+	}
+	m := v5Core(e)
+	m["anchoring_basis"] = anyNullableStr(e.AnchoringBasis)
+	m["attribution_margin"] = anyNullableStr(e.AttributionMargin)
+	m["ccs_score"] = anyNullableStr(e.CCSScore)
+	m["confidence"] = anyNullableStr(e.Confidence)
+	m["error_class"] = anyNullableStr(e.ErrorClass)
+	m["incident_id"] = anyNullableStr(e.IncidentID)
+	m["is_internal_validation"] = anyNullableBool(e.IsInternalValidation)
+	m["is_synthetic"] = anyNullableBool(e.IsSynthetic)
+	m["is_trial"] = anyNullableBool(e.IsTrial)
+	m["matched"] = anyNullableStr(e.Matched)
+	m["missing_field"] = anyNullableStr(e.MissingField)
+	m["pr_number"] = *e.PRNumber
+	m["producer_graph_score"] = anyNullableStr(e.ProducerGraphScore)
+	m["repository"] = *e.Repository
+	m["schema_stability_score"] = anyNullableStr(e.SchemaStabilityScore)
+	m["scoring_version"] = anyNullableStr(e.ScoringVersion)
+	m["service_zone"] = anyNullableStr(e.ServiceZone)
+	m["signal_observation_hash"] = anyNullableStr(e.SignalObservationHash)
+	m["temporal_basis"] = anyNullableStr(e.TemporalBasis)
+	return jcsSerialise(m)
+}
+
+// r1lCanonicalV5 builds the v5-jcs canonical form for R1-L low-confidence receipts.
+func r1lCanonicalV5(e *Envelope) (string, error) {
+	var candidateCount int64
+	if e.CandidateCount != nil {
+		candidateCount = *e.CandidateCount
+	}
+	m := v5Core(e)
+	m["attribution_margin"] = anyNullableStr(e.AttributionMargin)
+	m["candidate_count"] = candidateCount
+	m["highest_ccs"] = anyNullableStr(e.HighestCcs)
+	m["incident_id"] = anyNullableStr(e.IncidentID)
+	m["is_synthetic"] = anyNullableBool(e.IsSynthetic)
+	m["scoring_version"] = anyNullableStr(e.ScoringVersion)
+	m["service_zone"] = anyNullableStr(e.ServiceZone)
+	m["signal_observation_hash"] = anyNullableStr(e.SignalObservationHash)
+	return jcsSerialise(m)
+}
+
+// r1nCanonicalV5 builds the v5-jcs canonical form for R1-N no-attribution receipts.
+func r1nCanonicalV5(e *Envelope) (string, error) {
+	var lookback, prsEval int64
+	if e.LookbackDays != nil {
+		lookback = *e.LookbackDays
+	}
+	if e.PrsEvaluated != nil {
+		prsEval = *e.PrsEvaluated
+	}
+	m := v5Core(e)
+	m["highest_candidate_ccs"] = anyNullableStr(e.HighestCandidateCcs)
+	m["incident_id"] = anyNullableStr(e.IncidentID)
+	m["is_synthetic"] = anyNullableBool(e.IsSynthetic)
+	m["lookback_days"] = lookback
+	m["prs_evaluated"] = prsEval
+	m["scoring_version"] = anyNullableStr(e.ScoringVersion)
+	m["service_zone"] = anyNullableStr(e.ServiceZone)
+	m["signal_observation_hash"] = anyNullableStr(e.SignalObservationHash)
+	return jcsSerialise(m)
+}
+
+// r0CanonicalV5 builds the v5-jcs canonical form for R0 signal receipts.
+func r0CanonicalV5(e *Envelope) (string, error) {
+	m := v5Core(e)
+	m["incident_id"] = anyNullableStr(e.IncidentID)
+	m["raw_signal_hash"] = anyNullableStr(e.RawSignalHash)
+	m["source_integration"] = anyNullableStr(e.SourceIntegration)
+	return jcsSerialise(m)
+}
+
+// r2CanonicalV5 builds the v5-jcs canonical form for R2 resolution receipts.
+func r2CanonicalV5(e *Envelope) (string, error) {
+	if e.AttributionReceiptID == nil {
+		return "", fmt.Errorf("v5-jcs R2 receipt missing attribution_receipt_id")
+	}
+	if e.IncidentID == nil {
+		return "", fmt.Errorf("v5-jcs R2 receipt missing incident_id")
+	}
+	if e.ResolvedAt == nil {
+		return "", fmt.Errorf("v5-jcs R2 receipt missing resolved_at")
+	}
+	if e.GateEvaluatedAt == nil {
+		return "", fmt.Errorf("v5-jcs R2 receipt missing gate_evaluated_at")
+	}
+	if e.TimeToResolutionMs == nil {
+		return "", fmt.Errorf("v5-jcs R2 receipt missing time_to_resolution_ms")
+	}
+	if e.GatesPassed == nil {
+		return "", fmt.Errorf("v5-jcs R2 receipt missing gates_passed")
+	}
+	m := v5Core(e)
+	m["attribution_receipt_id"] = *e.AttributionReceiptID
+	m["dsr_fix_code"] = anyNullableStr(e.DSRFixCode)
+	m["duration_gate_score"] = anyNullableStr(e.DurationGateScore)
+	m["feature_gate_score"] = anyNullableStr(e.FeatureGateScore)
+	m["file_gate_score"] = anyNullableStr(e.FileGateScore)
+	m["gate_evaluated_at"] = *e.GateEvaluatedAt
+	m["gates_passed"] = *e.GatesPassed
+	m["incident_id"] = *e.IncidentID
+	m["infra_gate_score"] = anyNullableStr(e.InfraGateScore)
+	m["rate_gate_score"] = anyNullableStr(e.RateGateScore)
+	m["resolved_at"] = *e.ResolvedAt
+	m["service_zone"] = anyNullableStr(e.ServiceZone)
+	m["temporal_basis"] = anyNullableStr(e.TemporalBasis)
+	m["time_to_resolution_ms"] = *e.TimeToResolutionMs
+	return jcsSerialise(m)
+}
+
+// r2rCanonicalV5 builds the v5-jcs canonical form for R2-R re-attribution receipts.
+func r2rCanonicalV5(e *Envelope) (string, error) {
+	if e.DaysSinceR2 == nil {
+		return "", fmt.Errorf("v5-jcs R2-R receipt missing days_since_r2")
+	}
+	if e.FingerprintMatch == nil {
+		return "", fmt.Errorf("v5-jcs R2-R receipt missing fingerprint_match")
+	}
+	if e.IncidentID == nil {
+		return "", fmt.Errorf("v5-jcs R2-R receipt missing incident_id")
+	}
+	if e.NewR1 == nil {
+		return "", fmt.Errorf("v5-jcs R2-R receipt missing new_r1")
+	}
+	if e.OriginalR1 == nil {
+		return "", fmt.Errorf("v5-jcs R2-R receipt missing original_r1")
+	}
+	if e.OriginalR2 == nil {
+		return "", fmt.Errorf("v5-jcs R2-R receipt missing original_r2")
+	}
+	if e.SdeFingerprint == nil {
+		return "", fmt.Errorf("v5-jcs R2-R receipt missing sde_fingerprint")
+	}
+	m := v5Core(e)
+	m["days_since_r2"] = *e.DaysSinceR2
+	m["fingerprint_match"] = *e.FingerprintMatch
+	m["incident_id"] = *e.IncidentID
+	m["new_r1"] = *e.NewR1
+	m["original_r1"] = *e.OriginalR1
+	m["original_r2"] = *e.OriginalR2
+	m["sde_fingerprint"] = *e.SdeFingerprint
+	m["service_zone"] = anyNullableStr(e.ServiceZone)
+	return jcsSerialise(m)
+}
+
+// r2fCanonicalV5 builds the v5-jcs canonical form for R2-F failed-gate receipts.
+func r2fCanonicalV5(e *Envelope) (string, error) {
+	if e.AttemptedPR == nil {
+		return "", fmt.Errorf("v5-jcs R2-F receipt missing attempted_pr")
+	}
+	if e.ChainedFrom == nil {
+		return "", fmt.Errorf("v5-jcs R2-F receipt missing chained_from")
+	}
+	if e.GatesFailed == nil {
+		return "", fmt.Errorf("v5-jcs R2-F receipt missing gates_failed")
+	}
+	if e.IncidentID == nil {
+		return "", fmt.Errorf("v5-jcs R2-F receipt missing incident_id")
+	}
+	if e.RegressionDetected == nil {
+		return "", fmt.Errorf("v5-jcs R2-F receipt missing regression_detected")
+	}
+	m := v5Core(e)
+	m["attempted_pr"] = *e.AttemptedPR
+	m["chained_from"] = *e.ChainedFrom
+	m["gates_failed"] = *e.GatesFailed
+	m["incident_id"] = *e.IncidentID
+	m["regression_detected"] = *e.RegressionDetected
+	m["service_zone"] = anyNullableStr(e.ServiceZone)
+	return jcsSerialise(m)
+}
+
+// rvCanonicalV5 builds the v5-jcs canonical form for RV manual-verifier receipts.
+func rvCanonicalV5(e *Envelope) (string, error) {
+	var validCount, invalidCount, verifiedCount int64
+	if e.ValidCount != nil {
+		validCount = *e.ValidCount
+	}
+	if e.InvalidCount != nil {
+		invalidCount = *e.InvalidCount
+	}
+	if e.VerifiedReceiptCount != nil {
+		verifiedCount = *e.VerifiedReceiptCount
+	}
+	m := v5Core(e)
+	m["engagement_id"] = anyNullableStr(e.EngagementID)
+	m["invalid_count"] = invalidCount
+	m["valid_count"] = validCount
+	m["verification_result"] = anyNullableStr(e.VerificationResult)
+	m["verified_receipt_count"] = verifiedCount
+	m["verifier_client"] = anyNullableStr(e.VerifierClient)
+	m["verifier_identity_hash"] = anyNullableStr(e.VerifierIdentityHash)
+	return jcsSerialise(m)
+}
+
+// reCanonicalV5 builds the v5-jcs canonical form for RE engagement receipts.
+func reCanonicalV5(e *Envelope) (string, error) {
+	var receiptsInScope int64
+	if e.ReceiptsInScope != nil {
+		receiptsInScope = *e.ReceiptsInScope
+	}
+	perms := e.Permissions
+	if perms == nil {
+		perms = []string{}
+	}
+	sorted := make([]string, len(perms))
+	copy(sorted, perms)
+	sort.Strings(sorted)
+	m := v5Core(e)
+	m["engagement_id"] = anyNullableStr(e.EngagementID)
+	m["expires_at"] = anyNullableStr(e.ExpiresAt)
+	m["permissions"] = sorted
+	m["receipts_in_scope"] = receiptsInScope
+	m["recipient_hash"] = anyNullableStr(e.RecipientHash)
+	m["revoked_at"] = anyNullableStr(e.RevokedAt)
+	m["scope_hash"] = anyNullableStr(e.ScopeHash)
+	return jcsSerialise(m)
+}
+
+// governanceCanonicalV5 builds the v5-jcs canonical form for RG governance receipts.
+func governanceCanonicalV5(e *Envelope) (string, error) {
+	if e.ChangeType == nil {
+		return "", fmt.Errorf("v5-jcs RG receipt missing change_type")
+	}
+	if e.PriorStateHash == nil {
+		return "", fmt.Errorf("v5-jcs RG receipt missing prior_state_hash")
+	}
+	if e.NewStateHash == nil {
+		return "", fmt.Errorf("v5-jcs RG receipt missing new_state_hash")
+	}
+	m := v5Core(e)
+	m["change_type"] = *e.ChangeType
+	m["new_state_hash"] = *e.NewStateHash
+	m["prior_state_hash"] = *e.PriorStateHash
+	return jcsSerialise(m)
+}
+
+// confirmationGovernanceCanonicalV5 builds the v5-jcs canonical form for
+// confirmation RG receipts (change_type R1L_CONFIRMED / R1L_REJECTED).
+func confirmationGovernanceCanonicalV5(e *Envelope) (string, error) {
+	if e.ChangeType == nil {
+		return "", fmt.Errorf("v5-jcs confirmation-RG receipt missing change_type")
+	}
+	if e.ConfirmedReceiptID == nil {
+		return "", fmt.Errorf("v5-jcs confirmation-RG receipt missing confirmed_receipt_id")
+	}
+	m := v5Core(e)
+	m["change_type"] = *e.ChangeType
+	m["confirmed_receipt_id"] = *e.ConfirmedReceiptID
 	return jcsSerialise(m)
 }
 

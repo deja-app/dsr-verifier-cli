@@ -18,6 +18,8 @@ package dsr_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -1922,57 +1924,10 @@ func v5ConformanceEnvelope() *dsr.Envelope {
 	}
 }
 
-// v5ConformancePinnedCanonical is the pinned canonical string for the §3.3
-// conformance vector (774 chars, SHA-256
-// fcc93d66c32f432d7bbede9ba5cfb9c661d9ef04781bfcc4e27fee26524459d6).
-// Both this file and the TypeScript suite assert this exact byte sequence.
-const v5ConformancePinnedCanonical = `{"actor":null,"anchoring_basis":null,"attribution_margin":null,` +
-	`"canonical_form_version":"v5-jcs","ccs_score":"0.8000","confidence":"medium",` +
-	`"error_class":null,"incident_id":null,"is_internal_validation":null,` +
-	`"is_synthetic":null,"is_trial":null,"issued_at":"2026-01-01T00:00:00.000Z",` +
-	`"matched":"true","missing_field":null,` +
-	`"organization_id":"00000000-0000-0000-0000-000000000000",` +
-	`"pr_number":42,"prior_hash":null,"producer_graph_score":null,` +
-	`"receipt_id":"R1-v5-conformance-vector-001","repository":"deja-app/wallow",` +
-	`"schema_stability_score":null,"scoring_version":"1.0.0",` +
-	`"service_zone":"test-zone","signal_observation_hash":null,` +
-	`"signing_algorithm":null,"signing_key_id":null,"temporal_basis":null,` +
-	`"type":"R1","vault_id":"00000000-0000-0000-0000-000000000001","version":null}`
-
-const v5ConformancePinnedSHA256 = "fcc93d66c32f432d7bbede9ba5cfb9c661d9ef04781bfcc4e27fee26524459d6"
-
-// TestGolden_R1_V5JCS_ConformanceVector pins the canonical bytes for the §3.3
-// conformance vector. A failure here means the Go canonical form has drifted from
-// the TypeScript form.
-func TestGolden_R1_V5JCS_ConformanceVector(t *testing.T) {
-	e := v5ConformanceEnvelope()
-
-	canonical, err := dsr.CanonicalPayload(e)
-	if err != nil {
-		t.Fatalf("CanonicalPayload: %v", err)
-	}
-
-	if canonical != v5ConformancePinnedCanonical {
-		t.Errorf("v5-jcs conformance vector mismatch\n got: %s\nwant: %s", canonical, v5ConformancePinnedCanonical)
-	}
-	if len(canonical) != 774 {
-		t.Errorf("v5-jcs conformance vector length = %d, want 774", len(canonical))
-	}
-}
-
-// TestGolden_R1_V5JCS_ConformanceVector_SHA256 pins the SHA-256 of the §3.3 vector.
-func TestGolden_R1_V5JCS_ConformanceVector_SHA256(t *testing.T) {
-	e := v5ConformanceEnvelope()
-
-	canonical, err := dsr.CanonicalPayload(e)
-	if err != nil {
-		t.Fatalf("CanonicalPayload: %v", err)
-	}
-
-	if got := sha256Hex(canonical); got != v5ConformancePinnedSHA256 {
-		t.Errorf("v5-jcs conformance SHA-256\n got: %s\nwant: %s", got, v5ConformancePinnedSHA256)
-	}
-}
+// fcc93d66 pin retired 2026-09-22 (c337): that vector used "signing_algorithm" (wrong
+// key name) and a non-null vault_id, so it never matched the spec. The authoritative
+// vectors are now in docs/dsr/v5-conformance-vectors.json and tested by
+// TestGolden_V5_AllTypes_ConformanceVectors below.
 
 // TestGolden_R1_V5JCS_NullFieldsIncluded verifies that every optional field
 // appears as a literal null in the canonical bytes (§3.1 include-with-null).
@@ -1999,7 +1954,7 @@ func TestGolden_R1_V5JCS_NullFieldsIncluded(t *testing.T) {
 		"producer_graph_score",
 		"schema_stability_score",
 		"signal_observation_hash",
-		"signing_algorithm",
+		"signature_algorithm",
 		"signing_key_id",
 		"temporal_basis",
 		"version",
@@ -2093,5 +2048,88 @@ func TestGolden_R1_V5JCS_DifferentFromV4JCS(t *testing.T) {
 
 	if canonical4 == canonical5 {
 		t.Error("v4-jcs and v5-jcs canonical bytes must differ — v5 adds universal core fields")
+	}
+}
+
+// TestGolden_V5_AllTypes_ConformanceVectors loads testdata/v5-conformance-vectors.json
+// (copied from docs/dsr/v5-conformance-vectors.json) and asserts byte-exact canonical
+// output for all 11 receipt types. Vectors were derived by hand from the spec — a
+// mismatch means the implementation diverges from the spec, not the other way around.
+func TestGolden_V5_AllTypes_ConformanceVectors(t *testing.T) {
+	raw, err := os.ReadFile("testdata/v5-conformance-vectors.json")
+	if err != nil {
+		t.Fatalf("reading testdata/v5-conformance-vectors.json: %v", err)
+	}
+
+	var file struct {
+		Core    map[string]json.RawMessage `json:"core"`
+		Vectors []struct {
+			Type              string                     `json:"type"`
+			EnvelopeType      string                     `json:"envelope_type"`
+			Fields            map[string]json.RawMessage `json:"fields"`
+			ExpectedCanonical string                     `json:"expected_canonical"`
+			ExpectedLength    int                        `json:"expected_length"`
+			ExpectedSHA256    string                     `json:"expected_sha256"`
+		} `json:"vectors"`
+	}
+	if err := json.Unmarshal(raw, &file); err != nil {
+		t.Fatalf("parsing v5-conformance-vectors.json: %v", err)
+	}
+
+	cfv := json.RawMessage(`"v5-jcs"`)
+
+	for _, v := range file.Vectors {
+		v := v
+		t.Run(v.Type, func(t *testing.T) {
+			// Merge core + type-specific fields into one flat object.
+			merged := make(map[string]json.RawMessage, len(file.Core)+len(v.Fields)+2)
+			for k, val := range file.Core {
+				merged[k] = val
+			}
+			for k, val := range v.Fields {
+				merged[k] = val
+			}
+
+			// The conformance vector uses "version" for the DSR spec version;
+			// Envelope.DSRVersion has json tag "dsr_version", so rename before unmarshal.
+			if val, ok := merged["version"]; ok {
+				merged["dsr_version"] = val
+				delete(merged, "version")
+			}
+
+			// Set the wire type (confirmation-RG envelope_type is "RG").
+			envType := v.Type
+			if v.EnvelopeType != "" {
+				envType = v.EnvelopeType
+			}
+			typeJSON, _ := json.Marshal(envType)
+			merged["type"] = typeJSON
+			merged["canonical_form_version"] = cfv
+
+			// Re-encode and unmarshal into Envelope.
+			envJSON, err := json.Marshal(merged)
+			if err != nil {
+				t.Fatalf("encoding merged envelope: %v", err)
+			}
+			var e dsr.Envelope
+			if err := json.Unmarshal(envJSON, &e); err != nil {
+				t.Fatalf("decoding envelope: %v", err)
+			}
+
+			got, err := dsr.CanonicalPayload(&e)
+			if err != nil {
+				t.Fatalf("CanonicalPayload: %v", err)
+			}
+
+			if got != v.ExpectedCanonical {
+				t.Errorf("canonical mismatch\n got: %s\nwant: %s", got, v.ExpectedCanonical)
+			}
+			if len(got) != v.ExpectedLength {
+				t.Errorf("canonical length = %d, want %d", len(got), v.ExpectedLength)
+			}
+			if gotSHA := sha256Hex(got); gotSHA != v.ExpectedSHA256 {
+				t.Errorf("SHA-256\n got: %s\nwant: %s", gotSHA, v.ExpectedSHA256)
+			}
+		})
 	}
 }

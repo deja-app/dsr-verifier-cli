@@ -158,6 +158,24 @@ type Envelope struct {
 	GatesPassed          *bool   `json:"gates_passed"`
 	GateEvaluatedAt      *string `json:"gate_evaluated_at"`
 	DSRFixCode           *string `json:"dsr_fix_code"`
+
+	// Signal receipt fields (R0 only)
+	RawSignalHash     *string `json:"raw_signal_hash"`
+	SourceIntegration *string `json:"source_integration"`
+
+	// Re-attribution receipt fields (R2-R only)
+	DaysSinceR2     *int64  `json:"days_since_r2"`
+	FingerprintMatch *string `json:"fingerprint_match"`
+	NewR1            *string `json:"new_r1"`
+	OriginalR1       *string `json:"original_r1"`
+	OriginalR2       *string `json:"original_r2"`
+	SdeFingerprint   *string `json:"sde_fingerprint"`
+
+	// Failed-gate receipt fields (R2-F only)
+	AttemptedPR        *string `json:"attempted_pr"`
+	ChainedFrom        *string `json:"chained_from"`
+	GatesFailed        *int64  `json:"gates_failed"`
+	RegressionDetected *bool   `json:"regression_detected"`
 }
 
 // CCSFactors holds the W1–W8 factor inputs for CCS recomputation.
