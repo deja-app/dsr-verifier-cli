@@ -164,7 +164,7 @@ type Envelope struct {
 	SourceIntegration *string `json:"source_integration"`
 
 	// Re-attribution receipt fields (R2-R only)
-	DaysSinceR2     *int64  `json:"days_since_r2"`
+	DaysSinceR2      *int64  `json:"days_since_r2"`
 	FingerprintMatch *string `json:"fingerprint_match"`
 	NewR1            *string `json:"new_r1"`
 	OriginalR1       *string `json:"original_r1"`
