@@ -60,10 +60,17 @@ func validateEnvelope(e *Envelope) *dsrerrors.VerificationError {
 	if e.Timestamp == "" {
 		missing = append(missing, "timestamp")
 	}
-	// R1-L receipts issued before DSR/1.0.2 were signed without an actor field.
-	// Actor was introduced in DSR/1.0.2; pre-1.0.2 R1-L receipts must not fail
-	// parse validation on its absence.
-	actorRequired := !(e.Type == "R1-L" && !dsrVersionAtLeast(e.DSRVersion, 1, 0, 2))
+	// R1 and R1-L may be signed with no actor. Déjà signs a null actor when the
+	// attribution names no author (an edge from /v1/sde/edge-ingest, or a GitHub
+	// payload with no user), and every canonical form omits an empty actor
+	// (CanonicalPayload: `if e.Actor != ""`, and v5Core's null). The export
+	// carries the value that was signed, so an absent actor is the receipt as
+	// issued, not a damaged one. This also covers R1-L issued before DSR/1.0.2,
+	// which had no actor field at all. Leniency here cannot make a tampered
+	// receipt pass: an actor removed from, or added to, a receipt changes its
+	// canonical bytes, and the signature step refuses it.
+	// Every other type still requires the field.
+	actorRequired := e.Type != TypeR1 && e.Type != TypeR1L
 	if e.Actor == "" && actorRequired {
 		missing = append(missing, "actor")
 	}

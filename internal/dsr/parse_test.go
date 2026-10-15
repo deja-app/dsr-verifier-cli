@@ -82,7 +82,6 @@ func TestParse_MissingRequired(t *testing.T) {
 		{"receipt_id", `"receipt_id": "rcpt_test_001",`},
 		{"vault_id", `"vault_id": "vlt_test",`},
 		{"timestamp", `"timestamp": "2026-05-12T12:42:08Z",`},
-		{"actor", `"actor": "actor@example.com",`},
 		{"origin", `"origin": "github",`},
 		{"signature", `"signature": "dGVzdHNpZ25hdHVyZQ==",`},
 	}
@@ -176,5 +175,38 @@ func TestSigAlgo_Defaults(t *testing.T) {
 	}
 	if e2.SigAlgo() != algo {
 		t.Errorf("SigAlgo() = %q, want %q", e2.SigAlgo(), algo)
+	}
+}
+
+// An R1 or R1-L signed with no actor is the receipt as issued: Déjà signs a
+// null actor when the attribution names no author. Parse must accept it.
+// Every other type still requires the field.
+func TestParse_ActorOptionalOnlyForR1AndR1L(t *testing.T) {
+	noActor := strings.Replace(minimalR1, `"actor": "actor@example.com",`, "", 1)
+	nullActor := strings.Replace(minimalR1, `"actor": "actor@example.com",`, `"actor": null,`, 1)
+	emptyActor := strings.Replace(minimalR1, `"actor": "actor@example.com",`, `"actor": "",`, 1)
+
+	for _, typ := range []string{"R1", "R1-L"} {
+		for label, input := range map[string]string{"absent": noActor, "null": nullActor, "empty": emptyActor} {
+			t.Run(typ+"/"+label, func(t *testing.T) {
+				in := strings.Replace(input, `"type": "R1",`, `"type": "`+typ+`",`, 1)
+				if _, err := dsr.Parse([]byte(in)); err != nil {
+					t.Fatalf("%s with %s actor: got %s — %s", typ, label, err.Class, err.HumanMessage)
+				}
+			})
+		}
+	}
+
+	for _, typ := range []string{"R1-N", "R2", "RV", "RE"} {
+		t.Run(typ+"/absent", func(t *testing.T) {
+			in := strings.Replace(noActor, `"type": "R1",`, `"type": "`+typ+`",`, 1)
+			_, err := dsr.Parse([]byte(in))
+			if err == nil {
+				t.Fatalf("%s with no actor: expected MalformedReceipt, got none", typ)
+			}
+			if err.Class != dsrerrors.MalformedReceipt || !strings.Contains(err.HumanMessage, "actor") {
+				t.Errorf("%s with no actor: got %s — %s", typ, err.Class, err.HumanMessage)
+			}
+		})
 	}
 }

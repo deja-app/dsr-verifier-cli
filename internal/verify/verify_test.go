@@ -11,6 +11,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"testing"
@@ -518,4 +519,85 @@ func containsStr(s, substr string) bool {
 		}
 		return false
 	}())
+}
+
+// An R1 signed with no actor (Déjà signs null when the attribution names no
+// author) verifies from its exported JSON, and an actor stripped from, or
+// added to, a signed R1 still fails at the signature.
+func TestSignature_R1_NoActor_VerifiesAndTamperFails(t *testing.T) {
+	pub, priv := makeEd25519Key(t)
+	provided, keyErr := verify.ParsePublicKeyFile(ed25519PEMKey(t, pub, testKeyID))
+	if keyErr != nil {
+		t.Fatalf("ParsePublicKeyFile: %v", keyErr)
+	}
+
+	roundTrip := func(t *testing.T, e *dsr.Envelope, mutate func(map[string]any)) (*dsr.Envelope, *dsrerrors.VerificationError) {
+		t.Helper()
+		raw, err := json.Marshal(e)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("Unmarshal: %v", err)
+		}
+		mutate(m)
+		raw, err = json.Marshal(m)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		return dsr.Parse(raw)
+	}
+
+	for _, typ := range []string{"R1", "R1-L"} {
+		t.Run(typ+" signed with no actor verifies", func(t *testing.T) {
+			e := baseR1()
+			e.Type = typ
+			e.Actor = ""
+			e.SigningKeyID = ptrStr(testKeyID)
+			signEd25519(t, e, priv)
+			for label, mutate := range map[string]func(map[string]any){
+				"null":   func(m map[string]any) { m["actor"] = nil },
+				"absent": func(m map[string]any) { delete(m, "actor") },
+			} {
+				parsed, perr := roundTrip(t, e, mutate)
+				if perr != nil {
+					t.Fatalf("%s actor: Parse: %s — %s", label, perr.Class, perr.HumanMessage)
+				}
+				res := verify.Signature(parsed, provided)
+				assertValid(t, typ+" "+label+" actor", res.Valid, res.Err)
+			}
+		})
+
+		t.Run(typ+" signed with an actor, actor stripped, fails", func(t *testing.T) {
+			e := baseR1()
+			e.Type = typ
+			e.SigningKeyID = ptrStr(testKeyID)
+			signEd25519(t, e, priv)
+			parsed, perr := roundTrip(t, e, func(m map[string]any) { delete(m, "actor") })
+			if perr != nil {
+				t.Fatalf("Parse: %s — %s", perr.Class, perr.HumanMessage)
+			}
+			res := verify.Signature(parsed, provided)
+			if res.Valid {
+				t.Fatalf("%s: a stripped actor verified", typ)
+			}
+		})
+
+		t.Run(typ+" signed with no actor, actor added, fails", func(t *testing.T) {
+			e := baseR1()
+			e.Type = typ
+			e.Actor = ""
+			e.SigningKeyID = ptrStr(testKeyID)
+			signEd25519(t, e, priv)
+			parsed, perr := roundTrip(t, e, func(m map[string]any) { m["actor"] = "github:1" })
+			if perr != nil {
+				t.Fatalf("Parse: %s — %s", perr.Class, perr.HumanMessage)
+			}
+			res := verify.Signature(parsed, provided)
+			if res.Valid {
+				t.Fatalf("%s: an added actor verified", typ)
+			}
+		})
+	}
 }
