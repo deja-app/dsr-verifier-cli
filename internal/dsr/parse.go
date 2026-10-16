@@ -69,10 +69,38 @@ func validateEnvelope(e *Envelope) *dsrerrors.VerificationError {
 	// which had no actor field at all. Leniency here cannot make a tampered
 	// receipt pass: an actor removed from, or added to, a receipt changes its
 	// canonical bytes, and the signature step refuses it.
-	// Every other type still requires the field.
-	actorRequired := e.Type != TypeR1 && e.Type != TypeR1L
+	//
+	// Under v5-jcs the actor is part of the signed core for every type, null
+	// where the receipt names no actor (DSR v5 §1, §3: absence is the literal
+	// null). R1-N always signs null; any type may. So for a v5 receipt an
+	// absent actor is also the receipt as issued, and v5Core serialises it as
+	// the null that was signed.
+	// Every other type, in every older form, still requires the field.
+	isV5 := e.FormVersion() == "v5-jcs"
+	actorRequired := e.Type != TypeR1 && e.Type != TypeR1L && !isV5
 	if e.Actor == "" && actorRequired {
 		missing = append(missing, "actor")
+	}
+	// A v5-jcs receipt signs organization_id, prior_hash, signing_key_id and
+	// signature_algorithm for every type, and none of them may be null (v5
+	// §1). An envelope without one cannot be checked: v5Core would put "" or
+	// null in its place, bytes no issuer signed, and the signature step would
+	// call a genuine receipt tampered. §3.2 and §6: a verifier that lacks a
+	// value says so and never substitutes one. So refuse it here, as a file
+	// this verifier cannot read, not as a forgery.
+	if isV5 {
+		if e.OrganizationID == "" && !IsGovernanceType(e.Type) {
+			missing = append(missing, "organization_id")
+		}
+		if e.PriorHash == nil || *e.PriorHash == "" {
+			missing = append(missing, "prior_hash")
+		}
+		if e.SigningKeyID == nil || *e.SigningKeyID == "" {
+			missing = append(missing, "signing_key_id")
+		}
+		if e.SignatureAlgorithm == nil || *e.SignatureAlgorithm == "" {
+			missing = append(missing, "signature_algorithm")
+		}
 	}
 	if e.Origin == "" {
 		missing = append(missing, "origin")
