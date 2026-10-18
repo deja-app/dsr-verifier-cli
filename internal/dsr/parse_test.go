@@ -210,3 +210,79 @@ func TestParse_ActorOptionalOnlyForR1AndR1L(t *testing.T) {
 		})
 	}
 }
+
+// A v5-jcs receipt signs its actor, null where the receipt names none (R1-N
+// always), so Parse accepts a v5 receipt of any type with no actor. Every
+// older form keeps the rule above.
+const minimalV5R1N = `{
+	"dsr_version": "DSR/1.0.4",
+	"type": "R1-N",
+	"canonical_form_version": "v5-jcs",
+	"receipt_id": "R1N-00000000-0000-4000-8000-00000000c336",
+	"vault_id": "00000000-0000-4000-8000-0000000000b7",
+	"organization_id": "00000000-0000-4000-8000-0000000000a1",
+	"timestamp": "2026-09-25T12:00:00.000Z",
+	"actor": null,
+	"origin": "production",
+	"prior_hash": "1b5e2e7d1e0e4c7e6f9d1a6f6d7a3a0c1d3b6a1f0e4d9c2b7a5f8e3d1c6b9a04",
+	"signing_key_id": "deja-managed-v1",
+	"signature_algorithm": "ed25519-v1",
+	"signature": "dGVzdHNpZ25hdHVyZQ=="
+}`
+
+func TestParse_V5_ActorOptionalForEveryType(t *testing.T) {
+	for _, typ := range []string{"R1-N", "R0", "R2", "R2-F", "R2-R", "RV", "RE"} {
+		for label, actor := range map[string]string{
+			"null":   `"actor": null,`,
+			"empty":  `"actor": "",`,
+			"absent": "",
+		} {
+			t.Run(typ+"/"+label, func(t *testing.T) {
+				in := strings.Replace(minimalV5R1N, `"actor": null,`, actor, 1)
+				in = strings.Replace(in, `"type": "R1-N",`, `"type": "`+typ+`",`, 1)
+				if _, err := dsr.Parse([]byte(in)); err != nil {
+					t.Fatalf("v5 %s with %s actor: got %s — %s", typ, label, err.Class, err.HumanMessage)
+				}
+			})
+		}
+	}
+
+	// The same R1-N on its v1-legacy form still needs one.
+	legacy := strings.Replace(minimalV5R1N, `"canonical_form_version": "v5-jcs",`, "", 1)
+	if _, err := dsr.Parse([]byte(legacy)); err == nil || !strings.Contains(err.HumanMessage, "actor") {
+		t.Fatalf("v1-legacy R1-N with a null actor: expected MalformedReceipt naming actor, got %v", err)
+	}
+}
+
+// A v5-jcs envelope missing a core field that may not be null is refused as
+// malformed, naming the field, instead of being verified over "" or null.
+func TestParse_V5_CoreFieldsRequired(t *testing.T) {
+	for _, field := range []string{"organization_id", "prior_hash", "signing_key_id", "signature_algorithm"} {
+		for label, replace := range map[string]string{"absent": "", "empty": `"` + field + `": "",`, "null": `"` + field + `": null,`} {
+			t.Run(field+"/"+label, func(t *testing.T) {
+				lines := strings.Split(minimalV5R1N, "\n")
+				for i, l := range lines {
+					if strings.Contains(l, `"`+field+`":`) {
+						lines[i] = "\t" + replace
+					}
+				}
+				_, err := dsr.Parse([]byte(strings.Join(lines, "\n")))
+				if err == nil {
+					t.Fatalf("v5 R1-N with %s %s: expected MalformedReceipt, got none", label, field)
+				}
+				if err.Class != dsrerrors.MalformedReceipt || !strings.Contains(err.HumanMessage, field) {
+					t.Errorf("v5 R1-N with %s %s: got %s — %s", label, field, err.Class, err.HumanMessage)
+				}
+			})
+		}
+	}
+
+	// On an older form none of them is required, as before.
+	legacy := strings.Replace(minimalV5R1N, `"canonical_form_version": "v5-jcs",`, "", 1)
+	legacy = strings.Replace(legacy, `"actor": null,`, `"actor": "system",`, 1)
+	legacy = strings.Replace(legacy, `"organization_id": "00000000-0000-4000-8000-0000000000a1",`, "", 1)
+	legacy = strings.Replace(legacy, `"prior_hash": "1b5e2e7d1e0e4c7e6f9d1a6f6d7a3a0c1d3b6a1f0e4d9c2b7a5f8e3d1c6b9a04",`, "", 1)
+	if _, err := dsr.Parse([]byte(legacy)); err != nil {
+		t.Fatalf("v1-legacy R1-N without organization_id or prior_hash: got %s — %s", err.Class, err.HumanMessage)
+	}
+}

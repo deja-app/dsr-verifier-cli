@@ -601,3 +601,68 @@ func TestSignature_R1_NoActor_VerifiesAndTamperFails(t *testing.T) {
 		})
 	}
 }
+
+// A v5-jcs R1-N is signed with a null actor (it names no one). Its exported
+// JSON, with the actor null or absent, verifies; an actor added to it fails at
+// the signature, as does a receipt signed with an actor that is then stripped.
+func TestSignature_V5_R1N_NullActor_VerifiesAndTamperFails(t *testing.T) {
+	pub, priv := makeEd25519Key(t)
+	provided, keyErr := verify.ParsePublicKeyFile(ed25519PEMKey(t, pub, testKeyID))
+	if keyErr != nil {
+		t.Fatalf("ParsePublicKeyFile: %v", keyErr)
+	}
+	v5 := func(actor string) *dsr.Envelope {
+		e := baseR1N()
+		cfv := "v5-jcs"
+		e.CanonicalFormVersion = &cfv
+		e.OrganizationID = "00000000-0000-4000-8000-0000000000a1"
+		e.PriorHash = ptrStr("1b5e2e7d1e0e4c7e6f9d1a6f6d7a3a0c1d3b6a1f0e4d9c2b7a5f8e3d1c6b9a04")
+		e.SigningKeyID = ptrStr(testKeyID)
+		e.ScoringVersion = ptrStr("1.0.14")
+		e.Actor = actor
+		signEd25519(t, e, priv)
+		return e
+	}
+	reparse := func(t *testing.T, e *dsr.Envelope, mutate func(map[string]any)) *dsr.Envelope {
+		t.Helper()
+		raw, err := json.Marshal(e)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("Unmarshal: %v", err)
+		}
+		mutate(m)
+		if raw, err = json.Marshal(m); err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		parsed, perr := dsr.Parse(raw)
+		if perr != nil {
+			t.Fatalf("Parse: %s — %s", perr.Class, perr.HumanMessage)
+		}
+		return parsed
+	}
+
+	for label, mutate := range map[string]func(map[string]any){
+		"null":   func(m map[string]any) { m["actor"] = nil },
+		"absent": func(m map[string]any) { delete(m, "actor") },
+	} {
+		t.Run("signed null, exported "+label+", verifies", func(t *testing.T) {
+			res := verify.Signature(reparse(t, v5(""), mutate), provided)
+			assertValid(t, "v5 R1-N "+label+" actor", res.Valid, res.Err)
+		})
+	}
+	t.Run("signed null, actor added, fails", func(t *testing.T) {
+		res := verify.Signature(reparse(t, v5(""), func(m map[string]any) { m["actor"] = "system" }), provided)
+		if res.Valid {
+			t.Fatal("an actor added to a v5 R1-N signed with none verified")
+		}
+	})
+	t.Run("signed with an actor, actor stripped, fails", func(t *testing.T) {
+		res := verify.Signature(reparse(t, v5("system"), func(m map[string]any) { delete(m, "actor") }), provided)
+		if res.Valid {
+			t.Fatal("a v5 R1-N whose signed actor was stripped verified")
+		}
+	})
+}
